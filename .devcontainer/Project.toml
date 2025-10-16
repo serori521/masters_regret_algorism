@@ -30,3 +30,4 @@ StatsPlots = "0.15"
 StringEncodings = "0.3"
 julia = "1.11"
 CSV = "0.10" # ★ CSV の互換バージョンを追加 (0.10.x が一般的、または "1" でも可)
+IJulia = "1"
