@@ -10,6 +10,7 @@ using Conda
 Conda.add("python=$PYTHON_VERSION")
 Conda.add("jupyter")
 Conda.add("nbconvert")
+Pkg.add("IJulia")
 
 # Activate the project at the specified path
 Pkg.activate(PROJECT_PATH)
