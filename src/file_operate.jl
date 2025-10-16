@@ -1,7 +1,6 @@
 # 修正ステップ1: CSVパッケージの除去
 using Pkg
 import Pkg;
-Pkg.add("StringEncodings");
 using DelimitedFiles, StatsBase
 using DataFrames  # CSVを削除
 

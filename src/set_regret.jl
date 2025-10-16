@@ -227,22 +227,25 @@ end
     cell.full_count += 1
     m = cell.full_count
     r = cell.rank
+
+    # 次の partial 候補
     if m < length(r)
         new_k = r[m+1]
         cell.partial_idx = new_k
-        rebuild_slope!(cell)
-
-        # 連続性補正（理論値との差が極小なら理論値を採用）
-        B_theory = cell.difference_U[new_k]
-        B_cont = cell.regret - cell.slope * t_now
-        cell.intercept = (abs(B_theory - B_cont) < 1e-10) ? B_theory : B_cont
     else
-        # もう部分が存在しない端（安全固定）
-        cell.partial_idx = r[m]
-        rebuild_slope!(cell)
-        cell.intercept = cell.regret - cell.slope * t_now
+        cell.partial_idx = r[m]  # 末尾に到達
     end
+
+    # 新しい slope を再構成
+    rebuild_slope!(cell)
+
+    # ★重要：切片は常に「連続性」で決める（つじつま合わせではなく連続性の必然）
+    cell.intercept = cell.regret - cell.slope * t_now
+
+    # いまの t_now における regret は連続のはずなので、念のため合わせる
+    cell.regret = cell.slope * t_now + cell.intercept
 end
+
 
 #############
 # 10. 初期化：t=TR で全ペアの線形モデルを確定（キャッシュ込み）

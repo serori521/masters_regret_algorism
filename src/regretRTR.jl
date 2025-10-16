@@ -5,10 +5,10 @@ module RegretRTR
 # - 内側：各 p の最大リグレット相手の交点（区間内）も解析計算で収集
 
 export RTRState,
-       build_state, advance!, run!,
-       current_ranking, change_points, rankings_at,
-       best_opponents, max_regret_vector, ranking_from_MR,
-       save_rank_changes_csv
+    build_state, advance!, run!,
+    current_ranking, change_points, rankings_at,
+    best_opponents, max_regret_vector, ranking_from_MR,
+    save_rank_changes_csv
 
 include("set_regret.jl")  # 同ディレクトリの最新版 set_regret.jl を取り込み
 
@@ -28,9 +28,9 @@ end
 # =============== ビルド/初期化 ===============
 
 function build_state(utility::AbstractMatrix{<:Real},
-                     L::AbstractVector{<:Real},
-                     R::AbstractVector{<:Real})::RTRState
-    U  = Matrix{Float64}(utility)
+    L::AbstractVector{<:Real},
+    R::AbstractVector{<:Real})::RTRState
+    U = Matrix{Float64}(utility)
     Lf = collect(Float64, L)
     Rf = collect(Float64, R)
     tL, tR = find_optimal_trange(Lf, Rf)
@@ -51,14 +51,18 @@ end
 
 # t における MR ベクトルを（状態を変えずに）評価
 function max_regret_vector_at(matrix::Array{minimax_regret_tuple,2}, t::Float64)
-    A = size(matrix,1)
+    A = size(matrix, 1)
     MR = fill(-Inf, A)
     @inbounds for p in 1:A
         m = -Inf
         for q in 1:A
-            if p == q; continue; end
-            v = regret_at(matrix[p,q], t)
-            if v > m; m = v; end
+            if p == q
+                continue
+            end
+            v = regret_at(matrix[p, q], t)
+            if v > m
+                m = v
+            end
         end
         MR[p] = m
     end
@@ -67,13 +71,16 @@ end
 
 # t における “p の最大リグレット相手” を非破壊で返す
 @inline function best_opponent_at(matrix::Array{minimax_regret_tuple,2}, p::Int, t::Float64)
-    A = size(matrix,1)
+    A = size(matrix, 1)
     best_q, best_v = 0, -Inf
     @inbounds for q in 1:A
-        if q == p; continue; end
-        v = regret_at(matrix[p,q], t)
+        if q == p
+            continue
+        end
+        v = regret_at(matrix[p, q], t)
         if v > best_v
-            best_v = v; best_q = q
+            best_v = v
+            best_q = q
         end
     end
     return best_q
@@ -92,18 +99,20 @@ collect_inner_crossings!(st, t_left, t_right; atol=1e-12)
   その時点での“全体ランキング”を再評価して記録
 """
 function collect_inner_crossings!(st::RTRState, t_left::Float64, t_right::Float64; atol=1e-12)
-    A = size(st.matrix,1)
+    A = size(st.matrix, 1)
     t_candidates = Float64[]
 
     # 各 p について候補交点を集める
     @inbounds for p in 1:A
         q_star = best_opponent_at(st.matrix, p, t_right)
-        Astar  = st.matrix[p,q_star].slope
-        Bstar  = st.matrix[p,q_star].intercept
+        Astar = st.matrix[p, q_star].slope
+        Bstar = st.matrix[p, q_star].intercept
         for q in 1:A
-            if q == p || q == q_star; continue; end
-            Aq = st.matrix[p,q].slope
-            Bq = st.matrix[p,q].intercept
+            if q == p || q == q_star
+                continue
+            end
+            Aq = st.matrix[p, q].slope
+            Bq = st.matrix[p, q].intercept
             denom = (Astar - Aq)
             if abs(denom) <= atol
                 continue # 平行（交点なし）
@@ -115,7 +124,9 @@ function collect_inner_crossings!(st::RTRState, t_left::Float64, t_right::Float6
         end
     end
 
-    if isempty(t_candidates); return; end
+    if isempty(t_candidates)
+        return
+    end
 
     # 重複・近接をまとめ、右→左で処理
     sort!(t_candidates; rev=true)
@@ -131,7 +142,7 @@ function collect_inner_crossings!(st::RTRState, t_left::Float64, t_right::Float6
     # それぞれの t_cross で全体ランキングを“非破壊に”再評価して記録
     for tc in unique_t
         MRtc = max_regret_vector_at(st.matrix, tc)
-        rk   = ranking_from_MR(MRtc)
+        rk = ranking_from_MR(MRtc)
         # 直前の記録と違うときだけ追加
         last_rk = st.rks[st.cps[end]]
         if rk != last_rk
@@ -162,12 +173,14 @@ function advance!(st::RTRState)
 
     # 3) 差分更新 → ヒットのみ1段昇格
     dt = t_next - t_prev
-    @inbounds for i in 1:size(st.matrix,1), j in 1:size(st.matrix,2)
-        if i == j; continue; end
-        update_regret_by_dt!(st.matrix[i,j], dt)
+    @inbounds for i in 1:size(st.matrix, 1), j in 1:size(st.matrix, 2)
+        if i == j
+            continue
+        end
+        update_regret_by_dt!(st.matrix[i, j], dt)
     end
-    @inbounds for (i,j) in hits
-        promote_right_once!(st.matrix[i,j], t_next)
+    @inbounds for (i, j) in hits
+        promote_right_once!(st.matrix[i, j], t_next)
     end
 
     # 4) 境界点 t_next での外側ランキングを記録（必要なら）
@@ -199,15 +212,18 @@ change_points(st::RTRState) = st.cps
 rankings_at(st::RTRState, t::Float64) = get(st.rks, t, nothing)
 
 function best_opponents(matrix::Array{minimax_regret_tuple,2})
-    A = size(matrix,1)
+    A = size(matrix, 1)
     res = fill(0, A)
     @inbounds for p in 1:A
         best_q, best_v = 0, -Inf
         for q in 1:A
-            if q == p; continue; end
-            v = matrix[p,q].regret
+            if q == p
+                continue
+            end
+            v = matrix[p, q].regret
             if v > best_v
-                best_v = v; best_q = q
+                best_v = v
+                best_q = q
             end
         end
         res[p] = best_q
@@ -216,7 +232,7 @@ function best_opponents(matrix::Array{minimax_regret_tuple,2})
 end
 
 const max_regret_vector = RegretRTR.max_regret_vector
-const ranking_from_MR   = RegretRTR.ranking_from_MR
+const ranking_from_MR = RegretRTR.ranking_from_MR
 
 # =============== CSV 保存（任意） ===============
 
