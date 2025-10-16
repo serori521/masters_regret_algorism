@@ -1,0 +1,28 @@
+{
+    "name": "INULAB Julia Dev Container",
+    "dockerComposeFile": "docker-compose.yml",
+    "service": "inulab_julia_devcontainer",
+    "workspaceFolder": "/workspaces/inulab_julia_devcontainer",
+    "remoteUser": "root",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-toolsai.jupyter@2024.11.0",
+                "julialang.language-julia@1.138.1",
+                "ms-python.python@2024.12.3"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "zsh",
+                "jupyter.experiments.optOutFrom": [
+                    "NativeNotebookEditor"
+                ],
+                "[julia]": {
+                    "editor.defaultFormatter": "julialang.language-julia",
+                    "editor.formatOnSave": true
+                }, // ← ここの最後にカンマを追加
+                "julia.executablePath": "/root/.juliaup/bin/julia" // ← この行を追記 (これが最後の行なのでカンマなし)
+
+            }
+        }
+    }
+}

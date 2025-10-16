@@ -1,0 +1,8 @@
+services:
+  inulab_julia_devcontainer:
+    build: .
+    environment:
+      SHELL: "/bin/bash"
+    command: sleep infinity
+    volumes:
+      - ..:/workspaces/inulab_julia_devcontainer
