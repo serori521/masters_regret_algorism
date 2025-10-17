@@ -3,6 +3,7 @@
 include("RegretRTR.jl")
 using .RegretRTR
 using Plots
+using Plots: vline!, ylims
 
 """
 plot_regret_bruteforce(utility, L, R; n=200)
@@ -56,3 +57,14 @@ function plot_regret_bruteforce(utility::Matrix{Float64},
 
     return p
 end
+
+function plot_with_cps!(p::Plots.Plot, st::RegretRTR.RTRState;
+    color=:red, lw=1.5, ls=:dash, alpha=1.0)
+    cps = RegretRTR.change_points(st)
+    for (k, t) in enumerate(cps)
+        vline!(p, [t]; color=color, lw=lw, ls=ls, alpha=alpha,
+            label=(k == 1 ? "change points" : false))
+    end
+    return p
+end
+

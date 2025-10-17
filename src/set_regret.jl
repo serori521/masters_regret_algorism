@@ -1,3 +1,9 @@
+# モジュールとして定義
+module SetRegretCore
+
+# RegretRTR.jl から使う関数を列挙
+export minimax_regret_tuple, find_optimal_trange, create_minimax_R_Matrix
+export initialize_linear_models!, advance_TR_once!, max_regret_vector, ranking_from_MR
 ###############################
 # set_regret.jl  (右→左 専用最適化版)
 #
@@ -374,3 +380,4 @@ end
 #
 # ※ 左→右に進める場合は境界式が異なるため、本ファイルでは非対応。
 #############
+end # module SetRegretCore
