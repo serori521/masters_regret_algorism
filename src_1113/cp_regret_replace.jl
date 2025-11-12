@@ -2,13 +2,13 @@ module SetRegretCore
 
 # 公開API
 export minimax_regret_tuple,
-    find_optimal_trange,
-    create_minimax_R_Matrix,
-    initialize_linear_models!,
-    advance_TR_once!,
-    max_regret_vector,
-    ranking_from_MR,
-    check_outer_change
+       find_optimal_trange,
+       create_minimax_R_Matrix,
+       initialize_linear_models!,
+       advance_TR_once!,
+       max_regret_vector,
+       ranking_from_MR,
+       check_outer_change
 
 
 ###############################
@@ -216,7 +216,7 @@ function set_linear_model_for_pair!(
     A_val =
         cell.sum_diffL +
         (m == 0 ? 0.0 : cell.cumDiffW[m]) -
-        diff[kstar] * (cell.sumL_all + (m == 0 ? 0.0 : cell.cumW[m]))
+        diff[kstar] * ( cell.sumL_all + (m == 0 ? 0.0 : cell.cumW[m]) )
 
     # セット
     cell.full_count = m
@@ -368,11 +368,9 @@ function current_minimax_pair(matrix::Array{minimax_regret_tuple,2})
     # q* = argmax_q R_{c,q}(t)
     best_q = 0
     best_val = -Inf
-    @inbounds for q in 1:size(matrix, 1)
-        if q == c
-            continue
-        end
-        rv = matrix[c, q].regret
+    @inbounds for q in 1:size(matrix,1)
+        if q == c; continue; end
+        rv = matrix[c,q].regret
         if rv > best_val
             best_val = rv
             best_q = q
@@ -397,15 +395,15 @@ function find_inner_crossing(
 )
     # 交点候補の最大値を返す。なければ t_left を返す
     t_candidate = t_left
-    Astar = matrix[c, qstar].slope
-    Bstar = matrix[c, qstar].intercept
+    Astar = matrix[c,qstar].slope
+    Bstar = matrix[c,qstar].intercept
 
-    @inbounds for q in 1:size(matrix, 1)
+    @inbounds for q in 1:size(matrix,1)
         if q == c || q == qstar
             continue
         end
-        Aq = matrix[c, q].slope
-        Bq = matrix[c, q].intercept
+        Aq = matrix[c,q].slope
+        Bq = matrix[c,q].intercept
 
         AΔ = Astar - Aq
         BΔ = Bq - Bstar
@@ -442,7 +440,7 @@ function check_outer_change(
     # 注意：ここでは MR_p(t) を「pの中のmax R_{p,q}(t)」で近似的に
     # 線形化するには、「その区間では p の中で支配している q が一定」と仮定する必要がある。
     # 今はその仮定で交点を出す。厳密にやるなら p ごとに支配qが変わるイベントも見る必要あり。
-    A = size(matrix, 1)
+    A = size(matrix,1)
 
     # t_old 時点の MR とその支配q
     MR_old = fill(-Inf, A)
@@ -451,10 +449,8 @@ function check_outer_change(
         bestv = -Inf
         bestq = 0
         for q in 1:A
-            if p == q
-                continue
-            end
-            v = matrix[p, q].slope * t_old + matrix[p, q].intercept
+            if p == q; continue; end
+            v = matrix[p,q].slope * t_old + matrix[p,q].intercept
             if v > bestv
                 bestv = v
                 bestq = q
@@ -471,10 +467,8 @@ function check_outer_change(
         bestv = -Inf
         bestq = 0
         for q in 1:A
-            if p == q
-                continue
-            end
-            v = matrix[p, q].slope * t_new + matrix[p, q].intercept
+            if p == q; continue; end
+            v = matrix[p,q].slope * t_new + matrix[p,q].intercept
             if v > bestv
                 bestv = v
                 bestq = q
@@ -503,10 +497,10 @@ function check_outer_change(
             q1 = argq_old[p1]
             q2 = argq_old[p2]
 
-            A1 = matrix[p1, q1].slope
-            B1 = matrix[p1, q1].intercept
-            A2 = matrix[p2, q2].slope
-            B2 = matrix[p2, q2].intercept
+            A1 = matrix[p1,q1].slope
+            B1 = matrix[p1,q1].intercept
+            A2 = matrix[p2,q2].slope
+            B2 = matrix[p2,q2].intercept
 
             AΔ = A1 - A2
             BΔ = B2 - B1
@@ -545,15 +539,13 @@ function next_event_TR!(
     t_cur::Float64, t_L::Float64;
     eps::Float64=1e-12
 )
-    A = size(matrix, 1)
+    A = size(matrix,1)
 
     # ---- (i) 能動集合側イベント候補 ----
     t_next_active = t_L
     @inbounds for i in 1:A, j in 1:A
-        if i == j
-            continue
-        end
-        cell = matrix[i, j]
+        if i == j; continue; end
+        cell = matrix[i,j]
         tstar = cell.tstar
         # t_L < tstar < t_cur の中で最大をとる
         if (t_L + eps) < tstar < (t_cur - eps)
@@ -586,16 +578,14 @@ function next_event_TR!(
     hit_pairs = Tuple{Int,Int}[]
     if event_type == :active_set && t_candidate > t_L + eps
         @inbounds for i in 1:A, j in 1:A
-            if i == j
-                continue
-            end
-            if abs(matrix[i, j].tstar - t_candidate) <= 1e-10
-                push!(hit_pairs, (i, j))
+            if i == j; continue; end
+            if abs(matrix[i,j].tstar - t_candidate) <= 1e-10
+                push!(hit_pairs, (i,j))
             end
         end
     elseif event_type == :inner
         # innerの場合，"ヒットペア"は (c,qstar) だけを優先的に再構成対象にする
-        push!(hit_pairs, (c, qstar))
+        push!(hit_pairs, (c,qstar))
     end
 
     return t_candidate, hit_pairs, event_type
@@ -624,25 +614,23 @@ function advance_TR_once!(
 
     # (2) 差分更新
     dt = t_next - t_cur  # (<0)
-    @inbounds for i in 1:size(matrix, 1), j in 1:size(matrix, 2)
-        if i == j
-            continue
-        end
-        update_regret_by_dt!(matrix[i, j], dt)
+    @inbounds for i in 1:size(matrix,1), j in 1:size(matrix,2)
+        if i == j; continue; end
+        update_regret_by_dt!(matrix[i,j], dt)
     end
 
     # (3) イベントの種類ごとにモデル更新
     if event_type == :active_set
         # 能動集合境界ヒット：複数ペアあり得る
-        @inbounds for (i, j) in hit_pairs
-            promote_right_once!(matrix[i, j], t_next)
+        @inbounds for (i,j) in hit_pairs
+            promote_right_once!(matrix[i,j], t_next)
         end
     elseif event_type == :inner
         # 内側交点で "cの1位q*" が切り替わる局面
         # → その (c,q*) だけ線形モデルを組み直す
-        @inbounds for (i, j) in hit_pairs
+        @inbounds for (i,j) in hit_pairs
             # i==c, j==qstar のはず
-            set_linear_model_for_pair!(matrix[i, j], wL, wU, t_next)
+            set_linear_model_for_pair!(matrix[i,j], wL, wU, t_next)
         end
     else
         # event_type == :none → もう動けない
