@@ -10,13 +10,11 @@ using StringEncodings, Logging
 @inline function read_utility_value(utility::String)
     csv_path = "/workspaces/inulab_julia_devcontainer/data/効用値行列/" * utility * "/N=6_M=5/u.csv"
     data = readdlm(csv_path, ',', Float64)
-
-    # Matrixから直接DataFrameを生成（中間処理削減）
-    utility_for_alta = DataFrame[]
+    mats = Matrix{Float64}[]
     for i in 1:5:size(data, 1)
-        push!(utility_for_alta, DataFrame(data[i:i+4, :], :auto))
+        push!(mats, Matrix(data[i:i+4, :]))
     end
-    return utility_for_alta
+    return mats
 end
 
 # 修正ステップ3: 文字コード処理の最適化

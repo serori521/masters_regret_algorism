@@ -39,32 +39,31 @@ end
 # 2. データ構造（calc_IPWのtupleを拡張）
 #############
 mutable struct minimax_regret_tuple
-    # --- 固定情報 ---
-    difference_U::Vector{Float64}   # diff (N)
-    rank::Vector{Int}               # diff降順の添字 (貪欲順)
+    difference_U::Vector{Float64}
+    rank::Vector{Int}
 
-    # --- 現在のリグレット ---
-    regret::Float64                 # R_{p,q}(t)
+    regret::Float64
 
-    # --- 旧calc_IPWの互換（参照用のみ） ---
-    interm_index::Int               # 部分割当の基準インデックス（元）
-    Avail_space::Float64            # 未使用（右→左では使わない）
+    interm_index::Int
+    Avail_space::Float64
 
-    # --- 一次式と状態（能動集合が不変の間は一定） ---
-    full_count::Int                 # F のサイズ (rankの先頭から full_count 個がフル)
-    partial_idx::Int                # k* = rank[full_count+1]
-    slope::Float64                  # A (傾き)
-    intercept::Float64              # B (切片 = diff[k*])
+    full_count::Int
+    partial_idx::Int
+    slope::Float64
+    intercept::Float64
 
-    # --- キャッシュ（O(1)化の要） ---
-    sumL_all::Float64              # Σ L_i
-    sum_diffL::Float64             # Σ diff_i * L_i
-    cumW::Vector{Float64}          # cumW[j] = Σ_{s<=j} (R-L)[rank[s]]
-    cumDiffW::Vector{Float64}      # cumDiffW[j] = Σ_{s<=j} diff[rank[s]]*(R-L)[rank[s]]
+    sumL_all::Float64
+    sum_diffL::Float64
+    cumW::Vector{Float64}
+    cumDiffW::Vector{Float64}
+
+    tstar::Float64         # 追加: 次の能動集合切替時刻 t*_{p,q}
+    valid::Bool            # 追加: その tstar がまだ右→左で生きてるか
 end
 
+
 _minimax_empty() = minimax_regret_tuple(Float64[], Int[],
-    0.0, 0, 0.0, 0, 0, 0.0, 0.0, 0.0, 0.0, Float64[], Float64[])
+    0.0, 0, 0.0, 0, 0, 0.0, 0.0, 0.0, 0.0, Float64[], Float64[],-Inf,true)
 
 #############
 # 3. 差分ベクトルの前計算（一般化）
@@ -190,6 +189,9 @@ function set_linear_model_for_pair!(
     cell.interm_index = kstar
     cell.Avail_space = 0.0 # 右→左では使わない
     cell.regret = A * t + B
+    # ここで t* をキャッシュ
+    cell.tstar = boundary_t_right_cached(cell)
+    cell.valid = isfinite(cell.tstar)
     return
 end
 

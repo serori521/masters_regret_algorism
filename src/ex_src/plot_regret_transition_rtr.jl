@@ -2,6 +2,8 @@
 # 可視化: 各tで正しい一次モデルを「再計算」して最大リグレットを描く
 include("RegretRTR.jl")
 using .RegretRTR
+include("set_regret.jl")
+using .SetRegretCore
 using Plots
 using Plots: vline!, ylims
 
@@ -36,11 +38,11 @@ function plot_regret_bruteforce(utility::Matrix{Float64},
                 continue
             end
             # ★修正点1: RegretRTRモジュール内の関数を明示的に呼び出す
-            RegretRTR.set_linear_model_for_pair!(matrix_for_eval[i, j], L, R, t)
+            SetRegretCore.set_linear_model_for_pair!(matrix_for_eval[i, j], L, R, t)
         end
 
-        # ★修正点2: 同様に、RegretRTRモジュール内の関数を呼び出す
-        MR = RegretRTR.max_regret_vector(matrix_for_eval)
+        # ★修正点2: 同様に、SetRegretCoreモジュール内の関数を呼び出す
+        MR = SetRegretCore.max_regret_vector(matrix_for_eval)
         vals[:, k] .= MR
     end
 
