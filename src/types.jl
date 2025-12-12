@@ -1,3 +1,6 @@
+# src/types.jl
+module CoreTypes
+
 # =========
 # Core Types
 # =========
@@ -18,11 +21,9 @@ end
 struct Event
     t::Float64
     kind::EventKind
-    p::Int       # どの案 (alternative)
-    q::Int       # どの線/相手/候補（用途はイベント種別で変わる）
+    p::Int
+    q::Int
 end
-
-
 
 "結果（ログや変化点）"
 mutable struct LPSResult
@@ -39,7 +40,7 @@ struct LPSInstance
     utility::String
     N::Int
     M::Int
-    U::Vector{Matrix{Float64}}   # 効用値行列の束（あなたの read_utility_value の戻り）
+    U::Vector{Matrix{Float64}}
 end
 
 "初期状態（まずはinstanceと現在tだけ持つ）"
@@ -48,3 +49,6 @@ mutable struct LPSState
     inst::LPSInstance
 end
 
+export Line, EventKind, Event, LPSResult, eval_line, LPSInstance, LPSState
+
+end # module
