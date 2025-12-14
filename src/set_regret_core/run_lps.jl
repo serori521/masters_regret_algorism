@@ -179,8 +179,26 @@ function debug_outer_rejection(matrix, qstar, x_p_max, t_min, t_max;
     return out
 end
 
-@inline function t_left(t; δ=1e-12)
-    return t - max(δ, 1e-12 * max(1.0, abs(t)))
+@inline function t_left(t; δ=1e-14)
+    return t - max(δ, 1e-14 * max(1.0, abs(t)))
+end
+
+# E1(係数切替)が起きたペアだけ、ジャンプ後の t でモデルを更新する
+function apply_E1_updates!(
+    matrix::Array{minimax_regret_tuple,2},
+    wL::Vector{Float64}, wU::Vector{Float64},
+    pairs::Vector{Tuple{Int,Int}},
+    t::Float64;
+    eps::Float64=EPS_DEFAULT
+)
+    isempty(pairs) && return
+    tt = t_left(t)  # 左向き走査なので「少し左」で合わせる
+    @inbounds for (i, j) in pairs
+        i == j && continue
+        set_linear_model_for_pair!(matrix[i, j], wL, wU, tt; eps=eps)
+        # 対称側も安全のため更新（コスト小）
+        set_linear_model_for_pair!(matrix[j, i], wL, wU, tt; eps=eps)
+    end
 end
 
 # stateを「いまのt」に必ず整合させる（デバッグ中は常にfull refresh推奨）
@@ -221,42 +239,7 @@ function run_lps(
 )
     initialize_linear_models!(matrix, wL, wU, t_U; eps=eps)  # 初期モデル:contentReference[oaicite:6]{index=6}
     A = size(matrix, 1)
-    # ---- DEBUG: 初期化直後の各pの式と初期リグレット値 ----
-    # println("\n=== [INIT CHECK] after initialize_linear_models! at t_U = $(t_U) ===")
 
-
-    # q0  = Vector{Int}(undef, A)
-    # MR0 = Vector{Float64}(undef, A)
-
-    # @inbounds for p in 1:A
-    #     q = argmax_regret_index(matrix, p, t_U; eps=eps)  # この時点の最悪相手
-    #     q0[p] = q
-
-    #     if q == 0
-    #         MR0[p] = -Inf
-    #         println("p=$(p): q*=0  MR=-Inf")
-    #     else
-    #         cell = matrix[p, q]
-    #         val  = evaluate_regret(cell, t_U)  # = slope*t_U + intercept
-    #         MR0[p] = val
-    #         println(
-    #             "p=$(p)  q*=$(q)  " *
-    #             "R_p^q(t) = ($(cell.slope))*t + ($(cell.intercept))   " *
-    #             "t*=$(cell.tstar)   " *
-    #             "R(t_U)=$(val)"
-    #         )
-    #     end
-    # end
-
-    # rank0 = ranking_from_MR(copy(MR0))
-    # winners0 = findall(x -> x <= minimum(MR0) + eps, MR0)
-
-    # println("qstar(t_U)   = ", join(q0, "|"))
-    # println("MR(t_U)      = ", join(round.(MR0; digits=15), "|"))
-    # println("rank(t_U)    = ", join(rank0, "|"))
-    # println("winners(t_U) = ", join(winners0, "|"))
-    # println("=== [INIT CHECK END] ===\n")
-    # ---- DEBUG end ----
 
     qstar = zeros(Int, A)
     hat_q = zeros(Int, A)
@@ -272,17 +255,18 @@ function run_lps(
 
     Tchg = Float64[]
     timeline = SnapshotEntry[]
-    push_snapshot!(Tchg, timeline, matrix, qstar, t_U; eps=eps, detect_change=false)
+    # push_snapshot!(Tchg, timeline, matrix, qstar, t_U; eps=eps, detect_change=false)
 
     t = t_U
     while t > t_L + eps
         # --- (0) ループ先頭で不変条件（Inv-A/B/C）を保証（デバッグ中はtrue推奨）
         order = sync_state!(matrix, wL, wU, t, t_L, qstar, hat_q, x_p_max, order, pos;
-            eps=eps, refresh_pairs=true)
+            eps=eps, refresh_pairs=false)
 
         # --- (1) 次のジャンプ時刻（E1/E2）
-        E1, _ = next_coefficient_event(matrix, t_L, t; eps=eps)     # tstarベース:contentReference[oaicite:7]{index=7}
-        E2, _ = next_inner_event(x_p_max, t_L, t; eps=eps)          # x_p_maxベース:contentReference[oaicite:8]{index=8}
+        E1, pairsE1 = next_coefficient_event(matrix, t_L, t; eps=eps)
+        E2, idxsE2  = next_inner_event(x_p_max, t_L, t; eps=eps)  # いまはログ用に取るだけでもOK
+
         t_next = max(max(E1, E2), t_L)
         # println(t_next)
         if t_next >= t
@@ -303,8 +287,6 @@ function run_lps(
                 j += 1
             end
 
-            # x時点でモデルを合わせる（デバッグ段階は全更新でOK）
-            refresh_all_pairs!(matrix, wL, wU, t_left(x); eps=eps)
 
             did_swap = false
             progress = true
@@ -332,12 +314,23 @@ function run_lps(
                     progress = true
                 end
             end
+            RECORD_MR = false  # 本番はfalse。必要な検証だけtrue
 
             if did_swap
                 push!(Tchg, x)
-                snap = snapshot_state(matrix, qstar, x; eps=eps)
-                push!(timeline, (t=x, MR=snap.MR, rank=copy(order), winners=snap.winners))
+                if RECORD_MR
+                    snap = snapshot_state(matrix, qstar, x; eps=eps)
+                    push!(timeline, (t=x, MR=snap.MR, rank=copy(order), winners=snap.winners))
+                else
+                    push!(timeline, (t=x, MR=Float64[], rank=copy(order), winners=Int[]))
+                end
             end
+
+            # if did_swap
+            #     push!(Tchg, x)
+            #     snap = snapshot_state(matrix, qstar, x; eps=eps)
+            #     push!(timeline, (t=x, MR=snap.MR, rank=copy(order), winners=snap.winners))
+            # end
 
             k = j
         end
@@ -345,11 +338,15 @@ function run_lps(
         # --- (3) ジャンプ：t ← t_next
         t = t_next
 
-        # --- (4) ジャンプ後に必ず完全同期（Inv-A/B/C）
-        order = sync_state!(matrix, wL, wU, t, t_L, qstar, hat_q, x_p_max, order, pos;
-            eps=eps, refresh_pairs=true)
+        # ジャンプ先が E1 なら、その E1 ペアだけ係数更新してから inner を更新する
+        fireE1 = abs(E1 - t) <= eps
+        if fireE1
+            apply_E1_updates!(matrix, wL, wU, pairsE1, t; eps=eps)
+        end
 
-        push_snapshot!(Tchg, timeline, matrix, qstar, t; eps=eps, detect_change=false)
+        order = sync_state!(matrix, wL, wU, t, t_L, qstar, hat_q, x_p_max, order, pos;
+            eps=eps, refresh_pairs=false)
+
     end
 
     return (changes=Tchg, timeline=timeline)

@@ -124,11 +124,16 @@ function main()
 
     utility_v = LoadInstance.read_utility_value(paths, "u1")
     methodW   = LoadInstance.read_method_weights(paths, "A/MMRW", repeat_num)
-
+    eps = EPS_BENCH
     csvfile = bench_csv_path()
     println("Bench CSV: $csvfile")
     println("Start benchmark... repeat_num=$repeat_num, counts_utility=$counts_utility, BRUTE_STEPS=$BRUTE_STEPS, eps=$(EPS_BENCH)")
-
+    utility = Matrix(utility_v[1])
+    wL = methodW[1].L
+    wU = methodW[1].R
+    tL, tR = SetRegretCore.find_optimal_trange(wL, wU)
+    _ = brute_scan_changes(utility, wL, wU, tL, tR; steps=BRUTE_STEPS, eps=eps)
+    _ = lps_run_changes(utility, wL, wU, tL, tR; eps=eps)
     # 全体集計（任意）
     brute_total_all = 0.0
     lps_total_all   = 0.0
@@ -142,7 +147,7 @@ function main()
 
         Δ   = (tR - tL) / BRUTE_STEPS
         tol = TOL_FACTOR * Δ
-        eps = EPS_BENCH
+
 
         brute_times = Float64[]  # 秒
         lps_times   = Float64[]  # 秒
@@ -152,6 +157,8 @@ function main()
         # progress
         print("repeat $i / $repeat_num ... ")
 
+
+        
         for idx in 1:counts_utility
             utility = Matrix(utility_v[idx])
 

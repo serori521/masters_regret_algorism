@@ -23,11 +23,7 @@ function collect_outer_changes(
             abs(Adelta) <= eps && continue
 
             x = (line2.intercept - line1.intercept) / Adelta
-            x0 = 1.3
-            # デバッグ用
-            # if (t_min - 1e-9) <= x0 <= (t_max + 1e-9)
-            #     println("line",p1,",",p2,":",x)
-            # end
+
             lower = maximum((t_min, line1.tstar, line2.tstar, x_p_max[p1], x_p_max[p2]))
             if lower <= x + eps && x <= t_max + eps
                 push!(events, (x=x, p1=p1, p2=p2))
