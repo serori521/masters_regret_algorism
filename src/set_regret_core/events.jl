@@ -23,10 +23,10 @@ function collect_outer_changes(
             abs(Adelta) <= eps && continue
 
             x = (line2.intercept - line1.intercept) / Adelta
-            # x0 = 1.1144845286710632
+            x0 = 1.3
             # デバッグ用
             # if (t_min - 1e-9) <= x0 <= (t_max + 1e-9)
-            #     println("line",p1,":",p2,":",x)
+            #     println("line",p1,",",p2,":",x)
             # end
             lower = maximum((t_min, line1.tstar, line2.tstar, x_p_max[p1], x_p_max[p2]))
             if lower <= x + eps && x <= t_max + eps
@@ -52,7 +52,7 @@ function next_coefficient_event(
     @inbounds for i in 1:A, j in 1:A
         i == j && continue
         tstar = matrix[i, j].tstar
-        if !(t_L + eps < tstar < t_cur - eps)
+        if !(t_L + eps < tstar < t_cur)
             continue
         end
         if tstar > best + eps

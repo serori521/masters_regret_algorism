@@ -15,7 +15,7 @@ using Plots: vline!
 # 1. 計算用関数 (bench_brute_vs_lps_u1_1to10.jl より)
 # -------------------------
 const BRUTE_STEPS = 5000
-const repeat_num = 100
+const repeat_num = 1
 const counts_utility = 100
 
 function brute_scan_changes(utility, wL, wU, tL, tR; steps=BRUTE_STEPS, eps=SetRegretCore.EPS_DEFAULT)
@@ -154,68 +154,88 @@ function main()
     paths = Paths.project_paths()
 
     # 保存先ディレクトリ作成
-
+    outdir = joinpath(@__DIR__, "..", "..", "results", "tmp", "missings_png_$(repeat_num)")
+    if !isdir(outdir)
+        mkpath(outdir)
+        println("Created directory: $outdir")
+    else
+        println("Output directory: $outdir")
+    end
 
     # データ読み込み
     utility_v = LoadInstance.read_utility_value(paths, "u1")
     methodW = LoadInstance.read_method_weights(paths, "A/MMRW", repeat_num)
-    for i in 1:repeat_num
-        wL = methodW[i].L
-        wU = methodW[i].R
+    wL = methodW[repeat_num].L
+    wU = methodW[repeat_num].R
 
-        tL, tR = SetRegretCore.find_optimal_trange(wL, wU)
-        Δ = (tR - tL) / BRUTE_STEPS
-        tol = 20Δ
-        eps = SetRegretCore.EPS_DEFAULT
-        count_saved = 0
+    tL, tR = SetRegretCore.find_optimal_trange(wL, wU)
+    Δ = (tR - tL) / BRUTE_STEPS
+    tol = 20Δ
+    eps = SetRegretCore.EPS_DEFAULT
 
-        for idx in 1:counts_utility
-            utility = Matrix(utility_v[idx])
+    println("Start scanning u1 (1 to 100)...")
 
-            # 1. 計算
-            brute_changes = brute_scan_changes(utility, wL, wU, tL, tR; steps=BRUTE_STEPS, eps=eps)
-            lps_changes = lps_run_changes(utility, wL, wU, tL, tR; eps=eps)
+    count_saved = 0
 
-            # 2. 比較
-            pairs, miss_b, miss_l = match_changes(brute_changes, lps_changes, tol)
+    for idx in 1:counts_utility
+        utility = Matrix(utility_v[idx])
 
-            # 3. LPSの見逃し (missing_in_LPS) がある場合のみプロット保存
-            if !isempty(miss_b)
-                outdir = joinpath(@__DIR__, "..", "..", "results", "tmp", "3_missings_png_$(i)")
-                if !isdir(outdir)
-                    mkpath(outdir)
-                    println("Created directory: $outdir")
-                else
-                    println("Output directory: $outdir")
-                end
-                println("  [Found Missing] index=$idx, missing_count=$(length(miss_b))")
+        # 1. 計算
+        brute_changes = brute_scan_changes(utility, wL, wU, tL, tR; steps=BRUTE_STEPS, eps=eps)
+        lps_changes = lps_run_changes(utility, wL, wU, tL, tR; eps=eps)
 
-                # MR曲線を描画
-                p = plot_regret_bruteforce(utility, wL, wU, idx)
+        # 2. 比較
+        pairs, miss_b, miss_l = match_changes(brute_changes, lps_changes, tol)
 
-                # 線を重ねる
-                # Brute (正解) = 赤
-                overlay_change_points!(p, brute_changes; color=:red, linestyle=:solid, alpha=0.5, label="Brute")
-                # LPS (計算結果) = 青
-                overlay_change_points!(p, lps_changes; color=:blue, linestyle=:dash, alpha=0.5, label="LPS")
-                # Missing (見逃し箇所) = 緑の太線で強調
-                overlay_change_points!(p, miss_b; color=:green, linestyle=:solid, alpha=0.8, label="MISSING")
+        # 3. LPSの見逃し (missing_in_LPS) がある場合のみプロット保存
+        if !isempty(miss_b)
+            x0 = miss_b[1]  # brute側にあってLPSに無い “最初のmissing” をfocusにする
 
-                # 保存
-                # 3桁ゼロ埋め (001, 002...)
-                idx_str = lpad(idx, 3, "0")
-                fname = joinpath(outdir, "u1_$(idx_str)_missing.png")
-                savefig(p, fname)
+            trace_dir = joinpath(@__DIR__, "..", "..", "results", "tmp", "missings_trace_$(repeat_num)")
+            isdir(trace_dir) || mkpath(trace_dir)
 
-                count_saved += 1
-            end
+            idx_str = lpad(idx, 3, "0")
+            trace_csv = joinpath(trace_dir, "u1_$(idx_str)_trace.csv")
+            lines_csv = joinpath(trace_dir, "u1_$(idx_str)_lines.csv")
+            rej_csv = joinpath(trace_dir, "u1_$(idx_str)_reject.csv")
 
-            if idx % 10 == 0
-                print(".")
-            end
+            matrix2 = SetRegretCore.create_minimax_R_Matrix(utility)
+            SetRegretCore.run_lps(matrix2, wL, wU, tL, tR;
+                eps=eps,
+                trace_path=trace_csv,   # ループごとの概要（E1/E2/t_next/nS/順位など）
+                lines_path=lines_csv,   # 各tでの qstar/hat の slope/intercept
+                focus_x0=x0,            # missing交点の近傍だけ詳しく理由を取る
+                reject_path=rej_csv,    # REJECT_LOWER/UPPER と “支配項(dom)” を出す
+                near_tol=tol            # 近傍判定幅（あなたのtolでOK）
+            )
+            println("  [Found Missing] index=$idx, missing_count=$(length(miss_b))")
+
+            # MR曲線を描画
+            p = plot_regret_bruteforce(utility, wL, wU, idx)
+
+            # 線を重ねる
+            # Brute (正解) = 赤
+            overlay_change_points!(p, brute_changes; color=:red, linestyle=:solid, alpha=0.5, label="Brute")
+            # LPS (計算結果) = 青
+            overlay_change_points!(p, lps_changes; color=:blue, linestyle=:dash, alpha=0.5, label="LPS")
+            # Missing (見逃し箇所) = 緑の太線で強調
+            overlay_change_points!(p, miss_b; color=:green, linestyle=:solid, alpha=0.8, label="MISSING")
+
+            # 保存
+            # 3桁ゼロ埋め (001, 002...)
+            idx_str = lpad(idx, 3, "0")
+            fname = joinpath(outdir, "u1_$(idx_str)_missing.png")
+            savefig(p, fname)
+
+            count_saved += 1
         end
-        println("Times: $(i):Total saved images: $count_saved")
+
+        if idx % 10 == 0
+            print(".")
+        end
     end
+    println("\nDone.")
+    println("Total saved images: $count_saved")
 end
 
 main()
