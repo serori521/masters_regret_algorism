@@ -81,103 +81,6 @@ function refresh_all_pairs!(
         set_linear_model_for_pair!(matrix[p, q], wL, wU, t; eps=eps)
     end
 end
-"""
-    debug_outer_rejection(matrix, qstar, x_p_max, t_min, t_max; x0=nothing, eps=1e-12,
-                          near_tol=1e-6, print_all_in_interval=false, max_print=80)
-
-collect_outer_changes の「候補が push されない理由」を特定するデバッグ。
-
-- x0 を指定すると、交点 x が x0 近傍（|x-x0|<=near_tol）のペアだけ詳しく出す
-- print_all_in_interval=true にすると、区間 [t_min, t_max] に入る交点を全部出す（多いので注意）
-戻り値: 該当候補の NamedTuple 配列（後で手元でソート/分析できる）
-"""
-function debug_outer_rejection(matrix, qstar, x_p_max, t_min, t_max;
-    x0=nothing, eps=1e-12, near_tol=1e-6,
-    print_all_in_interval=false, max_print=80)
-
-    A = length(qstar)
-    out = NamedTuple[]
-    nprinted = 0
-
-    # minimax_regret_tuple から必要フィールドを取る（名前が違っても落ちにくいように）
-    get_slope(l) = getproperty(l, :slope)
-    get_intercept(l) = getproperty(l, :intercept)
-    get_tstar(l) = getproperty(l, :tstar)
-
-    for p1 in 1:A-1, p2 in p1+1:A
-        q1 = qstar[p1]
-        q2 = qstar[p2]
-        (q1 == 0 || q2 == 0) && continue
-
-        l1 = matrix[p1, q1]
-        l2 = matrix[p2, q2]
-
-        A1 = get_slope(l1)
-        B1 = get_intercept(l1)
-        t1 = get_tstar(l1)
-        A2 = get_slope(l2)
-        B2 = get_intercept(l2)
-        t2 = get_tstar(l2)
-
-        denom = (A1 - A2)
-        abs(denom) <= eps && continue  # 平行（交点なし）
-
-        x = (B2 - B1) / denom
-
-        in_interval = (x >= t_min - eps) && (x <= t_max + eps)
-        near_x0 = (x0 === nothing) ? false : (abs(x - x0) <= near_tol)
-
-        if !(near_x0 || (print_all_in_interval && in_interval))
-            continue
-        end
-
-        # collect_outer_changes と同じ lower
-        parts = (t_min=t_min, t1=t1, t2=t2, xp1=x_p_max[p1], xp2=x_p_max[p2])
-        lower = max(parts.t_min, parts.t1, parts.t2, parts.xp1, parts.xp2)
-
-        pass_lower = (lower <= x + eps)
-        pass_upper = (x <= t_max - eps)
-
-        verdict =
-            if pass_lower && pass_upper
-                :PUSHED
-            elseif !pass_lower
-                :REJECT_LOWER
-            else
-                :REJECT_UPPER
-            end
-
-        # どの要素が lower を支配してるか（複数同率あり）
-        dom = String[]
-        abs(parts.t_min - lower) <= 10eps && push!(dom, "t_min")
-        abs(parts.t1 - lower) <= 10eps && push!(dom, "tstar(p1)")
-        abs(parts.t2 - lower) <= 10eps && push!(dom, "tstar(p2)")
-        abs(parts.xp1 - lower) <= 10eps && push!(dom, "x_p_max(p1)")
-        abs(parts.xp2 - lower) <= 10eps && push!(dom, "x_p_max(p2)")
-
-        rec = (
-            p1=p1, p2=p2, q1=q1, q2=q2,
-            x=x, lower=lower, t_min=t_min, t_max=t_max,
-            dom=join(dom, "|"),
-            parts=parts,
-            verdict=verdict
-        )
-        push!(out, rec)
-
-        if nprinted < max_print
-            println("---- candidate ----")
-            println("p1=$p1 q1=$q1   p2=$p2 q2=$q2")
-            println("x = $x")
-            println("lower = $lower   (dom: ", join(dom, ", "), ")")
-            println("parts = ", parts)
-            println("check: lower<=x? ", pass_lower, "   x<=t_max-eps? ", pass_upper, "   => ", verdict)
-            nprinted += 1
-        end
-    end
-
-    println("\n[debug_outer_rejection] total hits = ", length(out), " (printed ", min(length(out), max_print), ")")
-    return out
-end
 
 @inline function t_left(t; δ=1e-14)
     return t - max(δ, 1e-14 * max(1.0, abs(t)))
@@ -201,7 +104,7 @@ function apply_E1_updates!(
     end
 end
 
-# stateを「いまのt」に必ず整合させる（デバッグ中は常にfull refresh推奨）
+# 初期化時のみ使用する状態同期関数
 function sync_state!(
     matrix, wL, wU, t, t_L,
     qstar, hat_q, x_p_max,
@@ -220,7 +123,7 @@ function sync_state!(
             eps=eps, preferred=qstar[p])
     end
 
-    # order/pos を確定（E1/E2のジャンプ後に必ずやる）
+    # order/pos を確定
     order_new = snapshot_state(matrix, qstar, t_left(t); eps=eps).rank
     @inbounds for (i, p) in enumerate(order_new)
         pos[p] = i
@@ -228,70 +131,141 @@ function sync_state!(
     return order_new
 end
 
+# -----------------------------------------------------------
+# キャッシュ付き交点計算ヘルパー
+# -----------------------------------------------------------
+@inline function compute_intersection_val(
+    matrix::Array{minimax_regret_tuple,2},
+    qstar::Vector{Int},
+    p1::Int, p2::Int;
+    eps::Float64=1e-15 # デフォルト値を安全な値に変更
+)
+    q1 = qstar[p1]
+    q2 = qstar[p2]
+    (q1 == 0 || q2 == 0) && return -Inf
 
+    l1 = matrix[p1, q1]
+    l2 = matrix[p2, q2]
 
+    Adelta = l1.slope - l2.slope
+    if abs(Adelta) <= eps
+        return -Inf # 平行
+    end
 
+    return (l2.intercept - l1.intercept) / Adelta
+end
+
+###############################
+# KDSベース左向き走査メインループ (完全版)
+###############################
 function run_lps(
     matrix::Array{minimax_regret_tuple,2},
     wL::Vector{Float64}, wU::Vector{Float64},
     t_L::Float64, t_U::Float64;
     eps::Float64=EPS_DEFAULT
 )
-    initialize_linear_models!(matrix, wL, wU, t_U; eps=eps)  # 初期モデル:contentReference[oaicite:6]{index=6}
+    # 1. 初期化
+    initialize_linear_models!(matrix, wL, wU, t_U; eps=eps)
     A = size(matrix, 1)
-
 
     qstar = zeros(Int, A)
     hat_q = zeros(Int, A)
     x_p_max = fill(t_L, A)
 
-    # order/pos は外側E3のswap用
+    # 交点キャッシュ: (p1, p2) -> 交点時刻 x
+    # キーは常に p1 < p2 で保存
+    cached_crossings = Dict{Tuple{Int,Int},Float64}()
+
+    # ダーティフラグ: trueならキャッシュの再計算が必要
+    dirty_outer = trues(A)
+
+    # 順位管理
     order = collect(1:A)
     pos = zeros(Int, A)
 
-    # まず t=t_U に完全同期（Inv-A/B/C）
+    # t=t_U で初期状態に完全同期
     order = sync_state!(matrix, wL, wU, t_U, t_L, qstar, hat_q, x_p_max, order, pos;
         eps=eps, refresh_pairs=true)
 
     Tchg = Float64[]
     timeline = SnapshotEntry[]
-    # push_snapshot!(Tchg, timeline, matrix, qstar, t_U; eps=eps, detect_change=false)
 
     t = t_U
-    while t > t_L + eps
-        # --- (0) ループ先頭で不変条件（Inv-A/B/C）を保証（デバッグ中はtrue推奨）
-        order = sync_state!(matrix, wL, wU, t, t_L, qstar, hat_q, x_p_max, order, pos;
-            eps=eps, refresh_pairs=false)
 
-        # --- (1) 次のジャンプ時刻（E1/E2）
+    # -------------------------------------------------------
+    # Main Loop
+    # -------------------------------------------------------
+    while t > t_L + eps
+
+        # --- (1) 次のジャンプ時刻（E1/E2）を計算 ---
         E1, pairsE1 = next_coefficient_event(matrix, t_L, t; eps=eps)
-        E2, idxsE2  = next_inner_event(x_p_max, t_L, t; eps=eps)  # いまはログ用に取るだけでもOK
+        E2, idxsE2 = next_inner_event(x_p_max, t_L, t; eps=eps)
 
         t_next = max(max(E1, E2), t_L)
-        # println(t_next)
         if t_next >= t
             break
         end
 
-        # --- (2) E3（外側順位変化）を区間 (t_next, t] で列挙
-        events = collect_outer_changes(matrix, qstar, x_p_max, t_next, t; eps=eps)
-        # collect_outer_changes は tstar と x_p_max を lower に使うので、ここで整合が必須:contentReference[oaicite:9]{index=9}
+        # --- (2) E3（外側順位変化）の収集 (キャッシュ活用版) ---
 
+        # 2-a. Dirtyなペアのキャッシュを更新
+        dirty_ps = findall(dirty_outer)
+        if !isempty(dirty_ps)
+            @inbounds for p1 in dirty_ps
+                for p2 in 1:A
+                    p1 == p2 && continue
+                    # キーの正規化 (p_min, p_max)
+                    k = p1 < p2 ? (p1, p2) : (p2, p1)
+
+                    val = compute_intersection_val(matrix, qstar, k[1], k[2]; eps=eps)
+                    cached_crossings[k] = val
+                end
+            end
+            dirty_outer .= false
+        end
+
+        # 2-b. キャッシュ内の全交点から、有効範囲 (t_next, t] にあるものを収集
+        events = NamedTuple{(:x, :p1, :p2),Tuple{Float64,Int,Int}}[]
+
+        for ((p1, p2), x) in cached_crossings
+            x == -Inf && continue
+
+            # 区間チェック: ★ここを修正！ t_next + eps をやめて厳密な t_next < x にする
+            # t_next ギリギリの交点も拾う（重複は後段で弾かれる）
+            if t_next < x && x <= t + eps
+                # 有効条件チェック (lower bound)
+                l1 = matrix[p1, qstar[p1]]
+                l2 = matrix[p2, qstar[p2]]
+
+                # ここも安全のため eps のゲタを少し甘く見るか、あるいは厳密にする
+                # 「交点 x はバリアより右（未来）でなければならない」
+                lower = max(t_L, l1.tstar, l2.tstar, x_p_max[p1], x_p_max[p2])
+                if lower <= x + eps
+                    push!(events, (x=x, p1=p1, p2=p2))
+                end
+            end
+        end
+
+        # 時刻降順にソート
+        sort!(events; by=e -> e.x, rev=true)
+
+        # --- (3) イベント処理（Swap） ---
         k = 1
-        while k <= length(events)
+        num_events = length(events)
+        while k <= num_events
             x = events[k].x
 
-            # 同じxをまとめる
+            # 同じ時刻(x)のイベントをまとめる
             j = k
-            while j <= length(events) && abs(events[j].x - x) <= eps
+            while j <= num_events && abs(events[j].x - x) <= eps
                 j += 1
             end
-
 
             did_swap = false
             progress = true
             swapped = Set{Tuple{Int,Int}}()
 
+            # バブルソート的なスワップ処理
             while progress
                 progress = false
                 for idx in k:(j-1)
@@ -302,6 +276,8 @@ function run_lps(
 
                     i1 = pos[p1]
                     i2 = pos[p2]
+
+                    # 隣接していなければスワップできない
                     abs(i1 - i2) == 1 || continue
 
                     i = min(i1, i2)
@@ -314,44 +290,47 @@ function run_lps(
                     progress = true
                 end
             end
-            RECORD_MR = false  # 本番はfalse。必要な検証だけtrue
 
             if did_swap
                 push!(Tchg, x)
-                if RECORD_MR
-                    snap = snapshot_state(matrix, qstar, x; eps=eps)
-                    push!(timeline, (t=x, MR=snap.MR, rank=copy(order), winners=snap.winners))
-                else
-                    push!(timeline, (t=x, MR=Float64[], rank=copy(order), winners=Int[]))
-                end
             end
-
-            # if did_swap
-            #     push!(Tchg, x)
-            #     snap = snapshot_state(matrix, qstar, x; eps=eps)
-            #     push!(timeline, (t=x, MR=snap.MR, rank=copy(order), winners=snap.winners))
-            # end
 
             k = j
         end
 
-        # --- (3) ジャンプ：t ← t_next
+        # --- (4) ジャンプと状態更新 ---
         t = t_next
 
-        # ジャンプ先が E1 なら、その E1 ペアだけ係数更新してから inner を更新する
+        # (a) E1: 係数切替
         fireE1 = abs(E1 - t) <= eps
         if fireE1
             apply_E1_updates!(matrix, wL, wU, pairsE1, t; eps=eps)
+            @inbounds for (i, j) in pairsE1
+                dirty_outer[i] = true
+                dirty_outer[j] = true
+            end
         end
 
-        order = sync_state!(matrix, wL, wU, t, t_L, qstar, hat_q, x_p_max, order, pos;
-            eps=eps, refresh_pairs=false)
+        # (b) E2: 内側1位交代
+        fireE2 = (abs(E2 - t) <= eps) && !isempty(idxsE2)
+        t_eval = t_left(t)
 
+        if fireE2
+            @inbounds for p in idxsE2
+                refresh_inner_state!(matrix, p, t_eval, t_L, qstar, hat_q, x_p_max; eps=eps)
+                dirty_outer[p] = true
+            end
+        end
+
+        if fireE1
+            @inbounds for (i, j) in pairsE1
+                refresh_inner_state!(matrix, i, t_eval, t_L, qstar, hat_q, x_p_max; eps=eps)
+                refresh_inner_state!(matrix, j, t_eval, t_L, qstar, hat_q, x_p_max; eps=eps)
+            end
+        end
+
+        
     end
 
     return (changes=Tchg, timeline=timeline)
 end
-
-###############################
-# 8. KDSベース左向き走査メインループ
-###############################

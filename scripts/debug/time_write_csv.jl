@@ -175,6 +175,9 @@ function main()
 
             # correctness check
             _, miss_b, miss_l = match_changes(brute_changes, lps_changes, tol)
+            if !isempty(miss_b)
+                println(idx,":",miss_b)
+            end
             if !isempty(miss_l)
                 # miss_l は "Extra in LPS"
                 for x in miss_l
