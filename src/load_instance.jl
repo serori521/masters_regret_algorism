@@ -21,9 +21,9 @@ end
 手法重みを読む:
 data/Simp/N=6/a3/<filename>/Simp.csv をSHIFT_JISで読み、必要部分を抽出
 """
-function read_method_weights(paths, filename::String, repeat_num::Int, criteria_num::Int;
-                            N::Int=6, a3::String="a3")
-    csv_path = joinpath(paths.data, "Simp", "N=$(N)", a3, filename, "Simp.csv")
+function read_method_weights(paths, filename::String, repeat_num::Int, criteria_num::Int=6;
+                             a3::String="a3")
+    csv_path = joinpath(paths.data, "Simp", "N=$(criteria_num)", a3, filename, "Simp.csv")
 
     io = open(csv_path, enc"SHIFT_JIS", "r")
     data = readdlm(io, ',', Float64; skipstart=3)

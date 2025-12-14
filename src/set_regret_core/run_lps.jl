@@ -203,7 +203,7 @@ function sync_state!(
     end
 
     # order/pos を確定（E1/E2のジャンプ後に必ずやる）
-    order_new = snapshot_state(matrix, qstar, t; eps=eps).rank
+    order_new = snapshot_state(matrix, qstar, t_left(t); eps=eps).rank
     @inbounds for (i, p) in enumerate(order_new)
         pos[p] = i
     end

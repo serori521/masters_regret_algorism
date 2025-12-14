@@ -236,7 +236,7 @@ function argmax_regret_index(
     A = size(matrix, 1)
     @inbounds for q in 1:A
         q == p && continue
-        cell = matrix[p,q]
+        cell = matrix[p, q]
         val = cell.slope * t + cell.intercept
 
         if val > best_val + eps

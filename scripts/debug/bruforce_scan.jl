@@ -19,7 +19,7 @@ function main()
     paths = Paths.project_paths()
 
     utility_v = LoadInstance.read_utility_value(paths, "u1")   # ← pathsを渡す
-    utility = Matrix(utility_v[5])
+    utility = Matrix(utility_v[51])
 
     methodW = LoadInstance.read_method_weights(paths, "A/MMRW", 1, 6)  # ←ここもpaths
     wL = methodW[1].L

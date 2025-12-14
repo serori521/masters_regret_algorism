@@ -1,5 +1,5 @@
 include(joinpath(@__DIR__, "..", "..", "src", "paths.jl"))
-include(joinpath(@__DIR__, "..", "..", "src", "cp_regret_replace.jl"))
+include(joinpath(@__DIR__, "..", "..", "src", "SetRegretCore.jl"))
 include(joinpath(@__DIR__, "..", "..", "src", "load_instance.jl"))  # 読み込みに使う場合
 # include(joinpath(@__DIR__, "..", "..", "src", "file_operate.jl")) # もし load_instance が合わないならこっち
 using .Paths
@@ -28,14 +28,22 @@ function plot_regret_bruteforce(
 
     vals = zeros(A, n)
     for (k, t) in enumerate(ts)
-        # 各tで(A,B,t*)を作り直す（brute）
         SetRegretCore.initialize_linear_models!(matrix_eval, L, R, t)
         MR = SetRegretCore.max_regret_vector(matrix_eval, t)
         vals[:, k] .= MR
     end
 
-    p = plot(legend=:topright, xlabel="t", ylabel="MR_p(t)",
-             title="MR (bruteforce) + change points")
+    # --- 修正箇所: legend を :outertopright に変更し、size で横幅を確保 ---
+    p = plot(
+        legend=:outertopright,  # グラフの外側（右上）に配置
+        xlabel="t",
+        ylabel="MR_p(t)",
+        title="MR (bruteforce) + change points",
+        size=(900, 600),        # 凡例分のスペース確保のため少し横長に（お好みで調整）
+        margin=5Plots.mm        # ラベルが見切れないように余白を追加
+    )
+    # ---------------------------------------------------------------
+
     for i in 1:A
         plot!(p, ts, vals[i, :], label="p=$i")
     end
@@ -85,21 +93,14 @@ function main(; n::Int=500)
     paths = Paths.project_paths()
 
     utility_v = LoadInstance.read_utility_value(paths, "u1")
-    utility   = Matrix(utility_v[5])
+    utility = Matrix(utility_v[51])
 
     methodW = LoadInstance.read_method_weights(paths, "A/MMRW", 1, 6)
     wL = methodW[1].L
     wU = methodW[1].R
 
     # bruteの変化点（あなたが出したリストをそのまま使う：確実）
-    brute_changes = Float64[
-        1.151459029922891,
-        1.1144845286710632,
-        1.0458855343871256,
-        0.9790698761764272,
-        0.8938264118755896,
-        0.864817478417564
-    ]
+    brute_changes = Float64[1.3004270365741455, 1.2949581392828784, 1.2022246634744358]
 
     # LPSの変化点（前に compare が吐いたCSV）
     lps_csv = joinpath("results", "tmp", "lps_changes.csv")
@@ -109,8 +110,8 @@ function main(; n::Int=500)
     p, ts, vals, tL, tR = plot_regret_bruteforce(utility, wL, wU; n=n)
 
     # 縦線：brute=赤, LPS=青
-    overlay_change_points!(p, brute_changes; color=:red,  alpha=0.55, label="brute chg")
-    overlay_change_points!(p, lps_changes;   color=:blue, alpha=0.35, label="LPS chg")
+    overlay_change_points!(p, brute_changes; color=:red, alpha=0.55, label="brute chg")
+    overlay_change_points!(p, lps_changes; color=:blue, alpha=0.35, label="LPS chg")
 
     # 保存
     out_png = joinpath("results", "tmp", "mr_brute_with_lps_changes.png")
