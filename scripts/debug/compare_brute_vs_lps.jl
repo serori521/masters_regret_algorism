@@ -86,7 +86,7 @@ function main()
     # brute scan steps と同じにする（あなたの brute と一致させる）
     steps = 5000
     Δ = (tR - tL) / steps
-    tol = 2Δ
+    tol = 20Δ
 
     # -------------------------
     # read brute csv
@@ -115,7 +115,7 @@ function main()
     for snap in res.timeline
         lps_rank_map[snap.t] = snap.rank
     end
-
+    println(lps_ts)
     lps_csv = joinpath(outdir, "lps_changes.csv")
     open(lps_csv, "w") do io
         println(io, "t,rank")

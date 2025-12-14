@@ -231,14 +231,25 @@ function argmax_regret_index(
 )
     best_q = 0
     best_val = -Inf
+    best_slope = Inf
+
     A = size(matrix, 1)
     @inbounds for q in 1:A
         q == p && continue
-        val = evaluate_regret(matrix[p, q], t)
-        if val > best_val + eps ||
-           (abs(val - best_val) <= eps && q == preferred)
+        cell = matrix[p,q]
+        val = cell.slope * t + cell.intercept
+
+        if val > best_val + eps
             best_val = val
             best_q = q
+            best_slope = cell.slope
+
+        elseif abs(val - best_val) <= eps
+            # ★ 左向き走査：同値なら slope が小さい方
+            if cell.slope < best_slope - eps || (abs(cell.slope - best_slope) <= eps && q == preferred)
+                best_q = q
+                best_slope = cell.slope
+            end
         end
     end
     return best_q

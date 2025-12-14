@@ -9,7 +9,7 @@ function collect_outer_changes(
     eps::Float64=EPS_DEFAULT
 )
     A = length(qstar)
-    changes = Float64[]
+    events = NamedTuple{(:x, :p1, :p2),Tuple{Float64,Int,Int}}[]
 
     @inbounds for p1 in 1:A-1
         for p2 in p1+1:A
@@ -23,16 +23,22 @@ function collect_outer_changes(
             abs(Adelta) <= eps && continue
 
             x = (line2.intercept - line1.intercept) / Adelta
+            x0 = 1.1144845286710632
+
+            if (t_min - 1e-9) <= x0 <= (t_max + 1e-9)
+                println("line",p1,p2,":",x)
+            end
             lower = maximum((t_min, line1.tstar, line2.tstar, x_p_max[p1], x_p_max[p2]))
             if lower <= x && x <= t_max - eps
-                push!(changes, x)
+                push!(events, (x=x, p1=p1, p2=p2))
             end
         end
     end
 
-    sort!(changes; rev=true)
-    return changes
+    sort!(events; by=e -> e.x, rev=true)
+    return events
 end
+
 
 function next_coefficient_event(
     matrix::Array{minimax_regret_tuple,2},
