@@ -14,8 +14,8 @@ using Statistics
 # -------------------------
 # 設定
 # -------------------------
-const BRUTE_STEPS     = 5000 #5000で50,10000で19の取りこぼし在り（10000回の実行のうち）
-const repeat_num      = 100
+const BRUTE_STEPS     = 1000 #5000で50,10000で19の取りこぼし在り（10000回の実行のうち）
+const repeat_num      = 1000
 const counts_utility  = 100
 
 # tol = tol_factor * Δ
@@ -140,7 +140,7 @@ function main()
     missing_all     = 0
     extra_all       = 0
     true_extra = 0
-    for i in 1:repeat_num
+    for i in 401:repeat_num
         wL = methodW[i].L
         wU = methodW[i].R
         tL, tR = SetRegretCore.find_optimal_trange(wL, wU)

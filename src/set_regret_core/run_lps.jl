@@ -186,12 +186,14 @@ function run_lps(
     # t=t_U で初期状態に完全同期
     order = sync_state!(matrix, wL, wU, t_U, t_L, qstar, hat_q, x_p_max, order, pos;
         eps=eps, refresh_pairs=true)
-
+    
+    timeline = RankTimelineEntry[]    
+    push!(timeline, (t=t_U, rank=copy(order)))
     Tchg = Float64[]
-    timeline = SnapshotEntry[]
+          # ★軽量timeline
 
     t = t_U
-
+    
     # -------------------------------------------------------
     # Main Loop
     # -------------------------------------------------------
@@ -200,24 +202,29 @@ function run_lps(
         # --- (1) 次のジャンプ時刻（E1/E2）を計算 ---
         E1, pairsE1 = next_coefficient_event(matrix, t_L, t; eps=eps)
         E2, idxsE2 = next_inner_event(x_p_max, t_L, t; eps=eps)
-
+        
         t_next = max(max(E1, E2), t_L)
+
         if t_next >= t
             break
         end
 
         # --- (2) E3（外側順位変化）の収集 (キャッシュ活用版) ---
-
+        
         # 2-a. Dirtyなペアのキャッシュを更新
         dirty_ps = findall(dirty_outer)
         if !isempty(dirty_ps)
             @inbounds for p1 in dirty_ps
                 for p2 in 1:A
                     p1 == p2 && continue
+                    if dirty_outer[p2] && p2 < p1
+                        continue
+                    end
                     # キーの正規化 (p_min, p_max)
                     k = p1 < p2 ? (p1, p2) : (p2, p1)
-
+                    
                     val = compute_intersection_val(matrix, qstar, k[1], k[2]; eps=eps)
+                    # println(t,":",k,",",val)
                     cached_crossings[k] = val
                 end
             end
@@ -293,6 +300,7 @@ function run_lps(
 
             if did_swap
                 push!(Tchg, x)
+                push!(timeline, (t=x, rank=copy(order)))
             end
 
             k = j
@@ -306,8 +314,10 @@ function run_lps(
         if fireE1
             apply_E1_updates!(matrix, wL, wU, pairsE1, t; eps=eps)
             @inbounds for (i, j) in pairsE1
-                dirty_outer[i] = true
-                dirty_outer[j] = true
+                
+                if qstar[i] == j
+                    dirty_outer[i] = true
+                end
             end
         end
 
@@ -325,12 +335,16 @@ function run_lps(
         if fireE1
             @inbounds for (i, j) in pairsE1
                 refresh_inner_state!(matrix, i, t_eval, t_L, qstar, hat_q, x_p_max; eps=eps)
-                refresh_inner_state!(matrix, j, t_eval, t_L, qstar, hat_q, x_p_max; eps=eps)
             end
         end
 
         
     end
 
-    return (changes=Tchg, timeline=timeline)
+    # ループ終了後（最後に左端の順位を入れる）
+    if isempty(timeline) || abs(timeline[end].t - t_L) > eps
+        push!(timeline, (t=t_L, rank=copy(order)))
+    end
+
+    return (tL=t_L, tU=t_U, changes=Tchg, timeline=timeline)
 end

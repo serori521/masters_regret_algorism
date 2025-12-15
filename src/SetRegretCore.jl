@@ -1,4 +1,9 @@
 module SetRegretCore
+# SetRegretCore.jl に追加（SnapshotEntry の下あたり）
+const RankTimelineEntry = NamedTuple{(:t, :rank), Tuple{Float64, Vector{Int}}}
+
+# export にも追加（必要なら）
+export RankTimelineEntry
 
 export minimax_regret_tuple,
     find_optimal_trange,

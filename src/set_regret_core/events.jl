@@ -56,6 +56,7 @@ function next_coefficient_event(
     @inbounds for i in 1:A, j in 1:A
         i == j && continue
         tstar = matrix[i, j].tstar
+        
         if !(t_L + eps < tstar < t_cur)
             continue
         end
@@ -79,10 +80,11 @@ function next_inner_event(
     best = t_L
     idxs = Int[]
     @inbounds for (p, x) in enumerate(x_p_max)
-        if !(t_L + eps < x < t_cur - eps)
+        if !(t_L + eps < x < t_cur)
             continue
         end
-        if x > best + eps
+
+        if x > best
             best = x
             empty!(idxs)
             push!(idxs, p)
