@@ -11,7 +11,7 @@ using Base.Threads
 # -------------------------
 # Config
 # -------------------------
-const N = 6
+const NS = 4:8
 const M = 5
 const REPEAT_NUM = 1000
 const UTILITY_MATRIX_NUM = 100
@@ -19,16 +19,24 @@ const UTILITY_MATRIX_NUM = 100
 const UTILITIES = ["u1", "u2"]
 const TRUE_WEIGHT_TYPES = ["A", "B", "C", "D", "E"]
 
-# Python 側と揃える（leading "/" 付き）
-const METHOD_DIRS = [
-    "/EV","/GM","/WMIN","/DMIN",
-    "/MMRW","/MMRD","/E-MMRW","/G-MMRW","/E-MMRD","/G-MMRD",
-    "/MMRwc","/eMMRw","/eMMRwc","/gMMRw","/gMMRwc",
-    "/eMMRd", "/eMMRdc", "/gMMRd", "/gMMRdc",
-    "/AMRW","/AMRD","/E-AMRW","/G-AMRW","/E-AMRD","/G-AMRD",
-    "/AMRwc","/eAMRw","/eAMRwc","/gAMRw","/gAMRwc",
-    "/eAMRd", "/eAMRdc", "/gAMRd", "/gAMRdc",
+const ACTIVE_METHOD_DIRS = [
+    "AMRD", "AMRwc", "AMRW", "AMRWW", "DMIN", 
+    "E-AMRD", "E-AMRW", "E-AMRWW",  
+    "E-MMRD", "E-MMRW", "E-MMRWW",  
+    "E-DMIN", "E-WMIN", "E-WWMIN", "EV", 
+    "G-AMRD", "G-AMRW", "G-AMRWW", 
+    "G-MMRD", "G-MMRW", "G-MMRWW", 
+    "G-DMIN", "G-WMIN", "G-WWMIN", "GM", 
+    "MMRD",  "MMRwc", "MMRW", "MMRWW", 
+    "DMIN", "WMIN", "WWMIN", "WMIN", 
+    "eAMRd", "eAMRdc", "eAMRw", "eAMRwc", 
+    "eMMRd", "eMMRdc", "eMMRw", "eMMRwc", 
+    "gAMRd", "gAMRdc", "gAMRw", "gAMRwc", 
+    "gMMRd", "gMMRdc", "gMMRw", "gMMRwc"
 ]
+
+# python側と揃えるため leading "/" を付けた表現も許容（内部ではcleanにする）
+const METHOD_DIRS = ["/" * m for m in ACTIVE_METHOD_DIRS]
 
 # -------------------------
 # Helpers
@@ -37,12 +45,13 @@ const METHOD_DIRS = [
     startswith(m, "/") ? m[2:end] : m
 end
 
-function out_csv_path(paths, utility::String, tw::String, method::String)
+function out_csv_path(paths, utility::String, N::Int, tw::String, method::String)
     m = method_clean(method)
-    dir = joinpath(paths.data, "a3", "regret", utility, "N=6", tw, m)
+    dir = joinpath(paths.data, "a3", "regret", utility, "N=$(N)", tw, m)
     mkpath(dir)
     return joinpath(dir, "$(utility)_minimax_regret_$(REPEAT_NUM).csv")
 end
+
 
 function file_complete(path::String)
     isfile(path) || return false
@@ -92,10 +101,11 @@ end
     return [res.timeline[i+1].rank for i in 1:k]
 end
 
-function run_one_file(paths, utility::String, tw::String, method::String;
+function run_one_file(paths, utility::String, N::Int, tw::String, method::String;
                       force::Bool=false, eps::Float64=SetRegretCore.EPS_DEFAULT)
 
-    outpath = out_csv_path(paths, utility, tw, method)
+    outpath = out_csv_path(paths, utility, N, tw, method)
+
     if !force && file_complete(outpath)
         return :skip
     end
@@ -107,26 +117,24 @@ function run_one_file(paths, utility::String, tw::String, method::String;
     trueW = LoadInstance.read_true_weights(paths, tw; N=N)
     tL_true, tU_true = SetRegretCore.find_optimal_trange(trueW.L, trueW.R)
 
-    # 手法重み（A/MMRW 形式で渡す）
+    # 手法重み
     filename = joinpath(tw, method_clean(method))
     methodW = try
         LoadInstance.read_method_weights(paths, filename, REPEAT_NUM, N; a3="a3")
     catch
-        # その手法が無い場合
-        @warn "NO_WEIGHT (read_method_weights failed)" utility tw method REPEAT_NUM filename
+        @warn "NO_WEIGHT (read_method_weights failed)" utility N tw method REPEAT_NUM filename
         return :no_weight
     end
 
+    # （以下は元のまま）
     open(outpath, "w") do io
         for utl_num in 1:UTILITY_MATRIX_NUM
             U = Matrix(utility_mats[utl_num])
 
-            # true は repeat に依らないのでここで一回だけ
             matrix_true = SetRegretCore.create_minimax_R_Matrix(U)
             res_true = SetRegretCore.run_lps(matrix_true, trueW.L, trueW.R, tL_true, tU_true; eps=eps)
             true_ts, true_ranks = points_from_res(res_true)
-            true_cnt = length(true_ts) 
-
+            true_cnt = length(true_ts)
 
             for r in 1:REPEAT_NUM
                 wL = methodW[r].L
@@ -135,17 +143,12 @@ function run_one_file(paths, utility::String, tw::String, method::String;
 
                 matrix_m = SetRegretCore.create_minimax_R_Matrix(U)
                 res_m = SetRegretCore.run_lps(matrix_m, wL, wU, tL, tU; eps=eps)
-                m_ts,    m_ranks    = points_from_res(res_m)
-                m_cnt    = length(m_ts)      # 最低2
+                m_ts, m_ranks = points_from_res(res_m)
+                m_cnt = length(m_ts)
 
-
-                # header（cntは“点の数”）
                 println(io, join((utl_num, r, true_cnt, m_cnt), ','))
-
-                # true時刻行（両端含む）
                 println(io, join(vcat([""], string.(true_ts)), ','))
 
-                # method行列（m_cnt 行、各行は method_t + cnt_true 個の値）
                 for i in 1:m_cnt
                     concord = [count_concordant_pairs(m_ranks[i], true_ranks[j]) for j in 1:true_cnt]
                     println(io, join(vcat([string(m_ts[i])], string.(concord)), ','))
@@ -157,24 +160,80 @@ function run_one_file(paths, utility::String, tw::String, method::String;
     return :ok
 end
 
+function precheck_missing(paths; Ns=NS)
+    missing = String[]
+
+    # utility / true weight は Nごとに一回だけチェック
+    for N in Ns
+        for utility in UTILITIES
+            try
+                LoadInstance.read_utility_value(paths, utility; N=N, M=M)
+            catch err
+                push!(missing, "MISSING_UTILITY,N=$N,utility=$utility,err=$(typeof(err))")
+            end
+        end
+        for tw in TRUE_WEIGHT_TYPES
+            try
+                LoadInstance.read_true_weights(paths, tw; N=N)
+            catch err
+                push!(missing, "MISSING_TRUEW,N=$N,tw=$tw,err=$(typeof(err))")
+            end
+        end
+    end
+
+    # method weights は (N, tw, method) ごとにチェック
+    for N in Ns, tw in TRUE_WEIGHT_TYPES, method in METHOD_DIRS
+        filename = joinpath(tw, method_clean(method))
+        try
+            LoadInstance.read_method_weights(paths, filename, REPEAT_NUM, N; a3="a3")
+        catch err
+            push!(missing, "MISSING_METHODW,N=$N,tw=$tw,method=$(method_clean(method)),err=$(typeof(err))")
+        end
+    end
+
+    # 出力：標準出力 + テキスト保存
+    if !isempty(missing)
+        @warn "PRECHECK found missing inputs" count=length(missing)
+        out = joinpath(@__DIR__, "missing_inputs_N4-8.txt")
+        open(out, "w") do io
+            for s in missing
+                println(io, s)
+            end
+        end
+        @info "missing list written" out
+    else
+        @info "PRECHECK ok: no missing inputs"
+    end
+    return missing
+end
+
 # -------------------------
 # Main
 # -------------------------
-function main(; force::Bool=false)
+function main(; force::Bool=false, do_precheck::Bool=true)
     paths = Paths.project_paths()
 
-    tasks = [(tw, m) for tw in TRUE_WEIGHT_TYPES for m in METHOD_DIRS]
+    if do_precheck
+        missing = precheck_missing(paths; Ns=NS)
+        if !isempty(missing)
+            @warn "Abort run because missing inputs exist. Fix them, then rerun."  # 必要ならcontinue運用に変えてOK
+            return
+        end
+    end
+
+    tasks = [(N, tw, m) for N in NS for tw in TRUE_WEIGHT_TYPES for m in METHOD_DIRS]
 
     for utility in UTILITIES
         @threads for idx in eachindex(tasks)
-            (tw, m) = tasks[idx]
-            st = run_one_file(paths, utility, tw, m; force=force)
+            (N, tw, m) = tasks[idx]
+            st = run_one_file(paths, utility, N, tw, m; force=force)
             if st == :ok
-                @info "done" utility tw m tid=threadid()
+                @info "done" utility N tw m tid=threadid()
             end
         end
     end
 end
+
 
 if abspath(PROGRAM_FILE) == @__FILE__
     @info "run_regret_lps_raw.jl start"  # これが出れば動いてる

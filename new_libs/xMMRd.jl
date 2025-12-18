@@ -1,0 +1,277 @@
+"""
+区間重要度推定法 eMMRd, gMMRd の関数
+xMMRd(PCM, method)とすることで，区間重要度が求められる．
+In: PCM:Matrix型, method:EV or GM
+Out:LPResult_Individual型(下で定義)
+"""
+
+using IntervalArithmetic
+using IntervalArithmetic.Symbols
+using JuMP
+import HiGHS
+
+include("./crisp-pcm.jl")
+include("./nearly-equal.jl")
+include("./solve-deterministic-ahp.jl")
+
+LPResult_Individual = @NamedTuple{
+    wᴸ::Vector{T}, wᵁ::Vector{T},
+    W::Vector{Interval{T}},
+} where {T<:Real}
+
+phase3_jump_result = @NamedTuple{
+    μₖ⃰::T,
+    l⃰::Vector{T},
+} where {T<:Real}
+
+# 任意の行と列を削除
+@inline function remove_row_col(A::Matrix{T}, row::Int, col::Int)::Matrix{T} where {T<:Real}
+    m, n = size(A)
+
+    # 行を除外
+    new_matrix = A[setdiff(1:m, row), :]
+    # 列を除外
+    result_matrix = new_matrix[:, setdiff(1:n, col)]
+
+    return result_matrix
+end
+
+@inline function phase1(A::Matrix{T}, method::Function)::Matrix{T} where {T<:Real}
+    m, n = size(A)
+
+    # Phase 1
+    Wᶜ = Matrix{T}(undef, m, n)
+    for k = 1:n
+        removed_matrix = remove_row_col(A, k, k)
+        W = method(removed_matrix)
+
+        # Wᶜₖを1として挿入
+        insert!(W, k, 1.0)
+        Wᶜ[:, k] = W
+    end
+
+    return Wᶜ
+end
+
+@inline function phase2_jump(A::Matrix{T}, Wᶜ::Matrix{T}, k::Int, n::Int)::T where {T<:Real}
+    ε = 1e-6
+    tolerance = 1e-6  # 許容誤差
+
+    model = Model(HiGHS.Optimizer)
+    set_silent(model)
+
+    try
+        @variable(model, l[i=1:n] ≥ ε)
+        @variable(model, d[i=1:n, j=1:n] ≥ 0)
+        @variable(model, ε ≤ μₖ ≤ 1 - ε)
+        lₖ = l[k]
+
+        @objective(model, Min, sum(d[i, j] for i in filter(x -> x != k, 1:n)
+                                   for j in filter(x -> x != i && x != k, 1:n)))
+
+        # dᵢⱼ = √aⱼᵢ (μₖwᵢᶜ + lᵢ) - √aᵢⱼ(μₖwⱼᶜ - lⱼ) 
+        for j in filter(j -> j != k, 1:n)
+            for i in filter(i -> i != j && i != k, 1:n)
+                aᵢⱼ = A[i, j]
+                wᵢᶜ = Wᶜ[i, k]
+                wⱼᶜ = Wᶜ[j, k]
+                lᵢ = l[i]
+                lⱼ = l[j]
+                dᵢⱼ = d[i, j]
+                @constraint(model, sqrt(aᵢⱼ) * (μₖ * wⱼᶜ - lⱼ) + dᵢⱼ - sqrt(1 / aᵢⱼ) * (μₖ * wᵢᶜ + lᵢ) == 0)
+                # @constraint(model, sqrt(aᵢⱼ) * (μₖ * wⱼᶜ - lⱼ) + dᵢⱼ - sqrt(1 / aᵢⱼ) * (μₖ * wᵢᶜ + lᵢ) ≤ ε)
+                # @constraint(model, sqrt(aᵢⱼ) * (μₖ * wⱼᶜ - lⱼ) + dᵢⱼ - sqrt(1 / aᵢⱼ) * (μₖ * wᵢᶜ + lᵢ) ≥ -ε)
+            end
+        end
+
+        # dₖⱼ = √aⱼₖ (1 - μₖ + lₖ) - √aₖⱼ(μₖwⱼᶜ - lⱼ)
+        for j in filter(j -> j != k, 1:n)
+            aₖⱼ = A[k, j]
+            lⱼ = l[j]
+            wⱼᶜ = Wᶜ[j, k]
+            dₖⱼ = d[k, j]
+            @constraint(model, sqrt(aₖⱼ) * (μₖ * wⱼᶜ - lⱼ) + dₖⱼ - sqrt(1 / aₖⱼ) * (1 - μₖ + lₖ) == 0)
+            # @constraint(model, sqrt(aₖⱼ) * (μₖ * wⱼᶜ - lⱼ) + dₖⱼ - sqrt(1 / aₖⱼ) * (1 - μₖ + lₖ) ≤ ε)
+            # @constraint(model, sqrt(aₖⱼ) * (μₖ * wⱼᶜ - lⱼ) + dₖⱼ - sqrt(1 / aₖⱼ) * (1 - μₖ + lₖ) ≥ -ε)
+        end
+
+        # dᵢₖ = √aₖᵢ (μₖwᵢᶜ + lᵢ) - √aᵢₖ(1 - μₖ - lₖ) 
+        for i in filter(i -> i != k, 1:n)
+            aᵢₖ = A[i, k]
+            lᵢ = l[i]
+            wᵢᶜ = Wᶜ[i, k]
+            dᵢₖ = d[i, k]
+            @constraint(model, sqrt(aᵢₖ) * (1 - μₖ - lₖ) + dᵢₖ - sqrt(1 / aᵢₖ) * (μₖ * wᵢᶜ + lᵢ) == 0)
+            # @constraint(model, sqrt(aᵢₖ) * (1 - μₖ - lₖ) + dᵢₖ - sqrt(1 / aᵢₖ) * (μₖ * wᵢᶜ + lᵢ) ≤ ε)
+            # @constraint(model, sqrt(aᵢₖ) * (1 - μₖ - lₖ) + dᵢₖ - sqrt(1 / aᵢₖ) * (μₖ * wᵢᶜ + lᵢ) ≥ -ε)
+        end
+
+        # 正規性条件
+        # Σᵢ≠ⱼlᵢ - lⱼ ≥ 0, j ∈ N 
+        for j in 1:n
+            @constraint(model, sum(l[i] for i in 1:n if i != j) - l[j] ≥ 0)
+        end
+
+        # μₖwᵢᶜ - lᵢ > 0, i ∈ N\{k}
+        for i in filter(x -> x != k, 1:n)
+            @constraint(model, μₖ * Wᶜ[i, k] - l[i] ≥ ε)
+        end
+
+        # (1 - μₖ) - lₖ > 0
+        @constraint(model, (1 - μₖ) - lₖ ≥ ε)
+
+        optimize!(model)
+
+        return objective_value(model)
+    finally
+        empty!(model)
+    end
+end
+
+@inline function phase3_jump(A::Matrix{T}, Wᶜ::Matrix{T}, p̄ₖ::T, k::Int, n::Int)::phase3_jump_result{T} where {T<:Real}
+    ε = 1e-6
+    tolerance = 1e-6  # 許容誤差
+
+    model = Model(HiGHS.Optimizer)
+    set_silent(model)
+
+    try
+        @variable(model, l[i=1:n] ≥ ε)
+        @variable(model, d[i=1:n, j=1:n] ≥ 0)
+        @variable(model, ε ≤ μₖ ≤ 1 - ε)
+        lₖ = l[k]
+
+        @objective(model, Min, sum(d[k, j] for j in filter(x -> x != k, 1:n)) +
+                               sum(d[i, k] for i in filter(x -> x != k, 1:n)))
+
+        # 制約条件を不等式に変更
+        # dᵢⱼ = √aⱼᵢ (μₖwᵢᶜ + lᵢ) - √aᵢⱼ(μₖwⱼᶜ - lⱼ) 
+        for j in filter(j -> j != k, 1:n)
+            for i in filter(i -> i != j && i != k, 1:n)
+                aᵢⱼ = A[i, j]
+                wᵢᶜ = Wᶜ[i, k]
+                wⱼᶜ = Wᶜ[j, k]
+                lᵢ = l[i]
+                lⱼ = l[j]
+                dᵢⱼ = d[i, j]
+                # @constraint(model, sqrt(aᵢⱼ) * (μₖ * wⱼᶜ - lⱼ) + dᵢⱼ - sqrt(1 / aᵢⱼ) * (μₖ * wᵢᶜ + lᵢ) == 0)
+                @constraint(model, sqrt(aᵢⱼ) * (μₖ * wⱼᶜ - lⱼ) + dᵢⱼ - sqrt(1 / aᵢⱼ) * (μₖ * wᵢᶜ + lᵢ) ≤ ε)
+                @constraint(model, sqrt(aᵢⱼ) * (μₖ * wⱼᶜ - lⱼ) + dᵢⱼ - sqrt(1 / aᵢⱼ) * (μₖ * wᵢᶜ + lᵢ) ≥ -ε)
+            end
+        end
+
+        # dₖⱼ = √aⱼₖ (1 - μₖ + lᵢ) - √aₖⱼ(μₖwⱼᶜ - lⱼ)
+        for j in filter(j -> j != k, 1:n)
+            aₖⱼ = A[k, j]
+            lⱼ = l[j]
+            wⱼᶜ = Wᶜ[j, k]
+            dₖⱼ = d[k, j]
+            # @constraint(model, sqrt(aₖⱼ) * (μₖ * wⱼᶜ - lⱼ) + dₖⱼ - sqrt(1 / aₖⱼ) * (1 - μₖ + lₖ) == 0)
+            @constraint(model, sqrt(aₖⱼ) * (μₖ * wⱼᶜ - lⱼ) + dₖⱼ - sqrt(1 / aₖⱼ) * (1 - μₖ + lₖ) ≤ ε)
+            @constraint(model, sqrt(aₖⱼ) * (μₖ * wⱼᶜ - lⱼ) + dₖⱼ - sqrt(1 / aₖⱼ) * (1 - μₖ + lₖ) ≥ -ε)
+        end
+
+        # dᵢₖ = √aₖᵢ (μₖwᵢᶜ + lᵢ) - √aᵢₖ(1 - μₖ - lⱼ) 
+        for i in filter(i -> i != k, 1:n)
+            aᵢₖ = A[i, k]
+            lᵢ = l[i]
+            wᵢᶜ = Wᶜ[i, k]
+            dᵢₖ = d[i, k]
+            # @constraint(model, sqrt(aᵢₖ) * (1 - μₖ - lₖ) + dᵢₖ - sqrt(1 / aᵢₖ) * (μₖ * wᵢᶜ + lᵢ) == 0)
+            @constraint(model, sqrt(aᵢₖ) * (1 - μₖ - lₖ) + dᵢₖ - sqrt(1 / aᵢₖ) * (μₖ * wᵢᶜ + lᵢ) ≤ ε)
+            @constraint(model, sqrt(aᵢₖ) * (1 - μₖ - lₖ) + dᵢₖ - sqrt(1 / aᵢₖ) * (μₖ * wᵢᶜ + lᵢ) ≥ -ε)
+        end
+
+        # 正規性条件
+        # Σᵢ≠ⱼlᵢ - lⱼ ≥ 0, j ∈ N 
+        for j in 1:n
+            @constraint(model, sum(l[i] for i in 1:n if i != j) - l[j] ≥ 0)
+        end
+
+        # μₖwᵢᶜ - lᵢ > 0, i ∈ N\{k}
+        for i in filter(x -> x != k, 1:n)
+            @constraint(model, μₖ * Wᶜ[i, k] - l[i] ≥ ε)
+        end
+
+        # (1 - μₖ) - lₖ > 0
+        @constraint(model, (1 - μₖ) - lₖ ≥ ε)
+
+        # phase2の最適性条件 (p̄ₖ: phase2の最適値)
+        @constraint(model, sum(d[i, j] for i in filter(x -> x != k, 1:n)
+                               for j in filter(x -> x != i && x != k, 1:n)) ≤ p̄ₖ + ε)
+
+        optimize!(model)
+
+        return (
+            μₖ⃰=value(μₖ),
+            l⃰=value.(l)
+        )
+    finally
+        empty!(model)
+    end
+end
+
+@inline function xMMRd(A::Matrix{T}, method::Function)::LPResult_Individual{T} where {T<:Real}
+    if !isCrispPCM(A)
+        throw(ArgumentError("A is not a crisp PCM"))
+    end
+    m, n = size(A)
+
+    # Phase 1
+    Wᶜ = phase1(A, method)
+
+    # Phase 2
+    p̄⃰ = Vector{T}(undef, n)
+    for k = 1:n
+        p̄⃰[k] = phase2_jump(A, Wᶜ, k, n)
+    end
+
+    # Phase 3
+    wᴸ = Matrix{T}(undef, m, n)
+    wᵁ = Matrix{T}(undef, m, n)
+    for k = 1:n
+        (μₖ⃰, l⃰) = phase3_jump(A, Wᶜ, p̄⃰[k], k, n)
+
+        for i = 1:n
+            lᵢ⃰ = l⃰[i]
+            wᵢᶜ = Wᶜ[i, k]
+            if i == k
+                wᴸᵢ = (1 - μₖ⃰) - lᵢ⃰
+                wᵁᵢ = (1 - μₖ⃰) + lᵢ⃰
+            else
+                wᴸᵢ = μₖ⃰ * wᵢᶜ - lᵢ⃰
+                wᵁᵢ = μₖ⃰ * wᵢᶜ + lᵢ⃰
+            end
+            wᴸ[i, k] = wᴸᵢ
+            wᵁ[i, k] = wᵁᵢ
+        end
+    end
+
+    # Phase 4
+    w̄ᴸ = Vector{T}(undef, n)
+    w̄ᵁ = Vector{T}(undef, n)
+    W̄ = Vector{Interval{T}}(undef, n)
+
+    for i = 1:n
+        w̄ᴸ[i] = minimum(wᴸ[i, :])
+        w̄ᵁ[i] = maximum(wᵁ[i, :])
+        if w̄ᴸ[i] > w̄ᵁ[i]
+            w̄ᴸ[i] = w̄
+        end
+
+    end
+
+    w_c = sum(w̄ᴸ .+ w̄ᵁ) / 2
+    w̄ᴸ = w̄ᴸ ./ w_c
+    w̄ᵁ = w̄ᵁ ./ w_c
+
+    for i = 1:n
+        W̄[i] = w̄ᴸ[i] .. w̄ᵁ[i]
+    end
+
+    return (
+        wᴸ=w̄ᴸ, wᵁ=w̄ᵁ,
+        W=W̄
+    )
+
+end

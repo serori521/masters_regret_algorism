@@ -42,7 +42,9 @@ weighted_method_dirs = [
     "E-AMRw", "E-MMRw", "G-AMRw", "G-MMRw",
     "eAMRw", "eAMRwc", "eMMRw", "eMMRwc",
     "gAMRw", "gAMRwc", "gMMRw", "gMMRwc",
-    "lAMRw", "lAMRwc", "lMMRw", "lMMRwc"
+    "E-AMRd", "E-MMRd", "G-AMRd", "G-MMRd",
+    "eAMRd", "eAMRdc", "eMMRd", "eMMRdc",
+    "gAMRd", "gAMRdc", "gMMRd", "gMMRdc"
 ]
 
 # 全部まとめて重複を削除
