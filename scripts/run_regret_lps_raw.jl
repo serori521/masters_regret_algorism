@@ -34,7 +34,7 @@ const ACTIVE_METHOD_DIRS = [
     "gAMRd", "gAMRdc", "gAMRw", "gAMRwc", 
     "gMMRd", "gMMRdc", "gMMRw", "gMMRwc"
 ]
-
+errors = []
 # python側と揃えるため leading "/" を付けた表現も許容（内部ではcleanにする）
 const METHOD_DIRS = ["/" * m for m in ACTIVE_METHOD_DIRS]
 
@@ -107,6 +107,7 @@ function run_one_file(paths, utility::String, N::Int, tw::String, method::String
     outpath = out_csv_path(paths, utility, N, tw, method)
 
     if !force && file_complete(outpath)
+        println("skip")
         return :skip
     end
 
@@ -121,9 +122,15 @@ function run_one_file(paths, utility::String, N::Int, tw::String, method::String
     filename = joinpath(tw, method_clean(method))
     methodW = try
         LoadInstance.read_method_weights(paths, filename, REPEAT_NUM, N; a3="a3")
+        
     catch
         @warn "NO_WEIGHT (read_method_weights failed)" utility N tw method REPEAT_NUM filename
         return :no_weight
+    end
+    repeat = REPEAT_NUM
+    if length(methodW) < REPEAT_NUM
+        repeat = length(methodW) 
+        # return :not_enough
     end
 
     # （以下は元のまま）
@@ -136,7 +143,7 @@ function run_one_file(paths, utility::String, N::Int, tw::String, method::String
             true_ts, true_ranks = points_from_res(res_true)
             true_cnt = length(true_ts)
 
-            for r in 1:REPEAT_NUM
+            for r in 1:repeat
                 wL = methodW[r].L
                 wU = methodW[r].R
                 tL, tU = SetRegretCore.find_optimal_trange(wL, wU)
@@ -162,7 +169,7 @@ end
 
 function precheck_missing(paths; Ns=NS)
     missing = String[]
-
+    bad = String[]
     # utility / true weight は Nごとに一回だけチェック
     for N in Ns
         for utility in UTILITIES
@@ -185,7 +192,10 @@ function precheck_missing(paths; Ns=NS)
     for N in Ns, tw in TRUE_WEIGHT_TYPES, method in METHOD_DIRS
         filename = joinpath(tw, method_clean(method))
         try
-            LoadInstance.read_method_weights(paths, filename, REPEAT_NUM, N; a3="a3")
+            data = LoadInstance.read_method_weights(paths, filename, REPEAT_NUM, N; a3="a3")
+            if length(data) < REPEAT_NUM
+                push!(bad,"N=$N, tw=$tw, method=$(method_clean(method)), got=$(length(data))")
+            end
         catch err
             push!(missing, "MISSING_METHODW,N=$N,tw=$tw,method=$(method_clean(method)),err=$(typeof(err))")
         end
@@ -204,13 +214,14 @@ function precheck_missing(paths; Ns=NS)
     else
         @info "PRECHECK ok: no missing inputs"
     end
+    println(bad)
     return missing
 end
 
 # -------------------------
 # Main
 # -------------------------
-function main(; force::Bool=false, do_precheck::Bool=true)
+function main(; force::Bool=true, do_precheck::Bool=false)
     paths = Paths.project_paths()
 
     if do_precheck

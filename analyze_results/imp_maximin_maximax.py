@@ -14,41 +14,28 @@ epsi = 1e-6
 
 # N=6 固定の想定
 evaluation_num = N - 4
-eval_num_suffix = ["N=4", "N=5", "N=6", "N=7+", "N=8+"]
-util_num_suffix = ["N=4", "N=5", "N=6_M=5", "N=7+", "N=8+"]
+eval_num_suffix = ["N=4", "N=5", "N=6", "N=7", "N=8"]
+util_num_suffix = ["N=4_M=5", "N=5_M=5", "N=6_M=5", "N=7_M=5", "N=8_M=5"]
 
 true_weight_list = ["A", "B", "C", "D", "E"]
 
-# ---- 元コードの method 群（コメントアウトも含めて統合） ----
-# 使われていた 16 手法
-active_method_dirs = [
-    "EV", "GM", "WMIN", "DMIN",
-    "MMRW", "MMRD", "E-MMRW", "G-MMRW", "E-MMRD", "G-MMRD",
-    "AMRW", "AMRD", "E-AMRW", "G-AMRW", "E-AMRD", "G-AMRD",
+
+ALL_METHOD_DIRS = [
+    "AMRD", "AMRwc", "AMRW", "AMRWW", "DMIN", 
+    "E-AMRD", "E-AMRW", "E-AMRWW",  
+    "E-MMRD", "E-MMRW", "E-MMRWW",  
+    "E-DMIN", "E-WMIN", "E-WWMIN", "EV", 
+    "G-AMRD", "G-AMRW", "G-AMRWW", 
+    "G-MMRD", "G-MMRW", "G-MMRWW", 
+    "G-DMIN", "G-WMIN", "G-WWMIN", "GM", 
+    "MMRD",  "MMRwc", "MMRW", "MMRWW", 
+    "DMIN", "WMIN", "WWMIN", "WMIN", 
+    "eAMRd", "eAMRdc", "eAMRw", "eAMRwc", 
+    "eMMRd", "eMMRdc", "eMMRw", "eMMRwc", 
+    "gAMRd", "gAMRdc", "gAMRw", "gAMRwc", 
+    "gMMRd", "gMMRdc", "gMMRw", "gMMRwc"
 ]
 
-# コメントアウトされていた旧 31 手法（ファイル名側）
-legacy_method_dirs = [
-    "MSW","MSWW","MMRW","AMRW","E-MMRW","G-MMRW","MSD","MMRD","AMRD",
-    "E-MMRD","G-MMRD","MMRLD","AMRLD",
-    "EV","GM","E-MSW","G-MSW","E-MSD","G-MSD",
-    "E-AMRW","G-AMRW","E-AMRD","G-AMRD",
-    "MMRWW","AMRWW","E-MMRWW","G-MMRWW","E-AMRWW","G-AMRWW",
-    "E-MSWW","G-MSWW"
-]
-
-# コメントアウトされていた「w 付き」16 手法
-weighted_method_dirs = [
-    "E-AMRw", "E-MMRw", "G-AMRw", "G-MMRw",
-    "eAMRw", "eAMRwc", "eMMRw", "eMMRwc",
-    "gAMRw", "gAMRwc", "gMMRw", "gMMRwc",
-    "E-AMRd", "E-MMRd", "G-AMRd", "G-MMRd",
-    "eAMRd", "eAMRdc", "eMMRd", "eMMRdc",
-    "gAMRd", "gAMRdc", "gMMRd", "gMMRdc"
-]
-
-# 全部まとめて重複を削除
-ALL_METHOD_DIRS = sorted(set(active_method_dirs + legacy_method_dirs + weighted_method_dirs))
 
 max_or_min_list = ["maximin", "Maximax"]
 which_utility_list = ["u1", "u2"]
@@ -139,8 +126,8 @@ def load_estimated_interval_weights(base_dir, eval_idx, rt_idx, method_dir):
         raise RuntimeError(f"Could not find data start (col0==1) in {path}")
 
     data_rows = rows[start_idx : start_idx + R]
-    if len(data_rows) < R:
-        raise RuntimeError(f"Not enough rows in Simp.csv: need {R}, got {len(data_rows)}")
+    # if len(data_rows) < R:
+    #     raise RuntimeError(f"Not enough rows in Simp.csv: need {R}, got {len(data_rows)}")
 
     # ---- 区間重要度に変換 ----
     wL_list = []
@@ -279,7 +266,7 @@ def evaluate_all_methods(base_data_dir="../data", output_dir="../data/metrics_py
                     if wL_list is None:
                         # 該当ファイルがない手法はスキップ
                         continue
-
+                    Rtime = len(wL_list)
                     # 集計用
                     sum_top1 = 0
                     sum_top2 = 0
@@ -292,7 +279,7 @@ def evaluate_all_methods(base_data_dir="../data", output_dir="../data/metrics_py
                         true_totalU = true_totalU_list[m_idx]
                         true_rank = true_rank_list[m_idx]
 
-                        for rp_idx in range(R):
+                        for rp_idx in range(Rtime):
                             wL = wL_list[rp_idx]
                             wR = wR_list[rp_idx]
 

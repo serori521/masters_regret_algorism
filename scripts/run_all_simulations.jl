@@ -48,14 +48,96 @@ methods_map = OrderedDict(
 # シミュレーション設定
 num_criteria = [4, 5, 6, 7, 8]
 true_importance = ["A", "B", "C", "D", "E"]
-
+wanted = Set{Tuple{Int,String,String}}([
+    (4,"A","eAMRwc"),
+    (4,"A","eMMRwc"),
+    (4,"A","gAMRwc"),
+    (4,"A","gMMRwc"),
+    (4,"C","eAMRwc"),
+    (4,"C","eMMRwc"),
+    (4,"C","gAMRwc"),
+    (4,"C","gMMRwc"),
+    (4,"D","eAMRwc"),
+    (4,"D","eMMRwc"),
+    (4,"D","gAMRwc"),
+    (4,"D","gMMRwc"),
+    (5,"A","eAMRwc"),
+    (5,"A","eMMRwc"),
+    (5,"A","gAMRwc"),
+    (5,"A","gMMRwc"),
+    (5,"B","eAMRdc"),
+    (5,"B","eAMRwc"),
+    (5,"B","eMMRdc"),
+    (5,"B","eMMRwc"),
+    (5,"B","gAMRdc"),
+    (5,"B","gMMRdc"),
+    (5,"C","eAMRwc"),
+    (5,"C","eMMRwc"),
+    (5,"C","gAMRwc"),
+    (5,"C","gMMRwc"),
+    (5,"D","eAMRwc"),
+    (5,"E","eAMRwc"),
+    (5,"E","eMMRwc"),
+    (5,"E","gAMRwc"),
+    (5,"E","gMMRwc"),
+    (6,"A","eAMRwc"),
+    (6,"A","eMMRwc"),
+    (6,"A","gAMRwc"),
+    (6,"A","gMMRwc"),
+    (6,"B","eAMRdc"),
+    (6,"B","eAMRwc"),
+    (6,"B","eMMRdc"),
+    (6,"B","eMMRwc"),
+    (6,"B","gAMRdc"),
+    (6,"B","gAMRwc"),
+    (6,"B","gMMRdc"),
+    (6,"B","gMMRwc"),
+    (6,"C","eAMRwc"),
+    (6,"C","eMMRwc"),
+    (6,"C","gAMRwc"),
+    (6,"C","gMMRwc"),
+    (6,"D","eAMRwc"),
+    (6,"D","eMMRwc"),
+    (6,"D","gAMRdc"),
+    (6,"D","gAMRwc"),
+    (6,"D","gMMRdc"),
+    (6,"D","gMMRwc"),
+    (6,"E","eAMRwc"),
+    (6,"E","eMMRwc"),
+    (6,"E","gAMRwc"),
+    (6,"E","gMMRwc"),
+    (7,"A","eAMRwc"),
+    (7,"A","eMMRwc"),
+    (7,"A","gAMRwc"),
+    (7,"A","gMMRwc"),
+    (7,"B","eAMRwc"),
+    (7,"B","eMMRwc"),
+    (7,"B","gAMRwc"),
+    (7,"B","gMMRwc"),
+    (7,"C","eAMRwc"),
+    (7,"C","eMMRwc"),
+    (7,"D","gAMRwc"),
+    (7,"D","gMMRwc"),
+    (7,"E","gAMRwc"),
+    (7,"E","gMMRwc"),
+    (8,"A","eAMRwc"),
+    (8,"A","eMMRwc"),
+    (8,"A","gAMRwc"),
+    (8,"A","gMMRwc"),
+    (8,"C","eAMRwc"),
+    (8,"C","eMMRwc"),
+    (8,"C","gAMRwc"),
+    (8,"C","gMMRwc"),
+    (8,"E","gAMRwc"),
+    (8,"E","gMMRwc"),
+])
 # =================================================================
 # Step 1: 関数ハンドルの準備 (直列実行)
 # =================================================================
 println("Loading modules and functions...")
 
 # 計算に必要な情報をまとめる構造体的なリストを作る
-tasks = []
+method_tasks = []
 
 for (target_name, (file_path, func_sym, method_type)) in methods_map
     # モジュールの作成と読み込み（ここは安全のため直列でやる）
@@ -77,38 +159,26 @@ for (target_name, (file_path, func_sym, method_type)) in methods_map
     func_handle = getfield(@eval($mod_name), func_sym)
 
     # 並列処理用にタスクリストに追加
-    push!(tasks, (name=target_name, func=func_handle, method=method_type))
+    push!(method_tasks, (name=target_name, func=func_handle, method=method_type))
 end
-# =================================================================
-# Step 1: 関数ハンドルの準備 (直列実行)
-# =================================================================
-println("Loading modules and functions...")
 
-# 計算に必要な情報をまとめる構造体的なリストを作る
+# =================================================================
+# Step 1.5: 実行タスクの構築 (method × N × true_importance を事前に分割)
+#   - 上の wanted に含まれる組み合わせだけを tasks に積む
+# =================================================================
 tasks = []
-
-for (target_name, (file_path, func_sym, method_type)) in methods_map
-    # モジュールの作成と読み込み（ここは安全のため直列でやる）
-    mod_name = Symbol("Mod_" * target_name)
-    @eval module $mod_name
-    using IntervalArithmetic
-    using IntervalArithmetic.Symbols
-    using JuMP
-    import HiGHS
-    using Statistics
-
-    # 共通ライブラリの再読み込みは不要（コメントアウト済み前提）
-    # include("./libs/crisp-pcm.jl")
-
-    include($file_path)
+for mt in method_tasks
+    mname = mt.name
+    for N in num_criteria
+        for tw in true_importance
+            if (N, tw, mname) ∈ wanted
+                push!(tasks, (name=mname, func=mt.func, method=mt.method, N=N, setting=tw))
+            end
+        end
     end
-
-    # 関数オブジェクトを取得
-    func_handle = getfield(@eval($mod_name), func_sym)
-
-    # 並列処理用にタスクリストに追加
-    push!(tasks, (name=target_name, func=func_handle, method=method_type))
 end
+
+println("Filtered tasks: $(length(tasks)) (from wanted=$(length(wanted)))")
 
 println("Preparation complete. Starting parallel simulation with $(Threads.nthreads()) threads...")
 
@@ -117,16 +187,15 @@ println("Preparation complete. Starting parallel simulation with $(Threads.nthre
 # =================================================================
 # @threads は配列に対して有効なので、tasks配列を回す
 
-@threads for task in tasks
+for task in tasks
     target_name = task.name
     target_func = task.func
     method_type = task.method
+    N = task.N
+    setting = task.setting
 
-    println("Processing: $target_name on thread $(Threads.threadid()) ...")
+    println("Processing: $target_name N=$N tw=$setting on thread $(Threads.threadid()) ...")
 
-    # ここから下の計算ロジックは以前と同じ（ただし変数はtaskから取得したものを使う）
-    for N in num_criteria
-        for setting in true_importance
 
             Simp_columns = OrderedDict()
             push!(Simp_columns, "Num" => Int[])
@@ -155,28 +224,22 @@ println("Preparation complete. Starting parallel simulation with $(Threads.nthre
             for (i, subdf) in enumerate(subdfs)
                 A = Matrix(subdf)
                 solution = nothing
-                try
-                    if method_type === nothing
-                        solution = target_func(A)
-                    else
-                        solution = target_func(A, method_type)
-                    end
-                catch e
-                    # 並列処理中のエラー表示
-                    println("Error in $target_name N = $N ,setting = $setting (Thread $(Threads.threadid())): $e")
-                    # 並列ループを壊さないためにcontinueなどが良いが、ここではログだけ
-                end
 
-                if solution !== nothing
-                    E = solution.W
-                    E_data = Vector{Float64}()
-                    for j in 1:N
-                        push!(E_data, inf(E[j]))
-                        push!(E_data, sup(E[j]))
-                    end
-                    sum_width = sum(diam.(E))
-                    push!(Simp, (i, E_data..., sum_width))
+                if method_type === nothing
+                    solution = target_func(A)
+                else
+                    solution = target_func(A, method_type)
                 end
+                
+                E = solution.W
+                E_data = Vector{Float64}()
+                for j in 1:N
+                    push!(E_data, inf(E[j]))
+                    push!(E_data, sup(E[j]))
+                end
+                sum_width = sum(diam.(E))
+                push!(Simp, (i, E_data..., sum_width))
+                
             end
 
             # ファイル書き出し (パスが手法ごとに異なるので競合しない)
@@ -188,7 +251,6 @@ println("Preparation complete. Starting parallel simulation with $(Threads.nthre
                 mkpath(output_path)
             end
             CSV.write(output_path * "/Simp.csv", Simp)
-        end
-    end
-    println("Finished: $target_name")
+
+    println("Finished: $target_name N=$N tw=$setting")
 end
