@@ -160,41 +160,80 @@ E(ts)=ts*w_std_est. Returns (ts_star_list, r_list).
 """
 function best_ts_grid(w_std_true, w_std_est, tL, tU, tsL, tsU; Nt=50, Nts=50, metric=:F, agg=:mean)
     w_true = _interval_vector(w_std_true)
-    w_est = _interval_vector(w_std_est)
+    w_est  = _interval_vector(w_std_est)
 
-    t_grid = range(tL, tU; length=Nt)
+    t_grid  = range(tL,  tU;  length=Nt)
     ts_grid = range(tsL, tsU; length=Nts)
 
-    ts_star_list = Vector{Float64}(undef, length(t_grid))
-    r_list = Vector{Float64}(undef, length(t_grid))
+    ts_star_list  = Vector{Float64}(undef, length(t_grid))
+    r_list        = Vector{Float64}(undef, length(t_grid))
+
+    # 追加で保存する統計（基準ごとの score_vec を t ごとに集約したもの）
+    best_obj_list  = Vector{Float64}(undef, length(t_grid))   # agg(:mean/:sum) で使った目的関数値
+    best_mean_list = Vector{Float64}(undef, length(t_grid))   # mean(score_vec)
+    best_var_list  = Vector{Float64}(undef, length(t_grid))   # var(score_vec)   (corrected=false)
+    best_sd_list   = Vector{Float64}(undef, length(t_grid))   # std(score_vec)   (corrected=false)
+    best_min_list  = Vector{Float64}(undef, length(t_grid))   # minimum(score_vec)
 
     denom = tsU - tsL
+
     @inbounds for (ti, t) in enumerate(t_grid)
         T = t .* w_true
-        best_ts = ts_grid[1]
-        best_score = -Inf
+
+        best_ts   = ts_grid[1]
+        best_obj  = -Inf
+        best_mean = NaN
+        best_var  = NaN
+        best_sd   = NaN
+        best_min  = NaN
+
         for ts in ts_grid
             E = ts .* w_est
-            score_vec = if metric == :P
-                calculate_P(T, E)
-            elseif metric == :Q
-                calculate_Q(T, E)
-            elseif metric == :R
-                calculate_R(T, E)
-            elseif metric == :F
-                calculate_F(T, E)
-            else
-                throw(ArgumentError("metric must be one of :P, :Q, :R, :F"))
-            end
-            score = _aggregate_score(score_vec, agg)
-            if score > best_score
-                best_score = score
-                best_ts = ts
+
+            score_vec =
+                if metric == :P
+                    calculate_P(T, E)
+                elseif metric == :Q
+                    calculate_Q(T, E)
+                elseif metric == :R
+                    calculate_R(T, E)
+                elseif metric == :F
+                    calculate_F(T, E)
+                else
+                    throw(ArgumentError("metric must be one of :P, :Q, :R, :F"))
+                end
+
+            obj = _aggregate_score(score_vec, agg)
+
+            # NaN を混ぜたくないので、目的関数が有限のときだけ更新
+            if isfinite(obj) && obj > best_obj
+                best_obj = obj
+                best_ts  = ts
+
+                # 統計は「基準（N個）」方向で計算（1つの t に対して N 個のスコアがある）
+                finite_vec = filter(isfinite, score_vec)
+                if isempty(finite_vec)
+                    best_mean = NaN
+                    best_var  = NaN
+                    best_sd   = NaN
+                    best_min  = NaN
+                else
+                    best_mean = mean(finite_vec)
+                    best_var  = var(finite_vec; corrected=false)
+                    best_sd   = std(finite_vec; corrected=false)
+                    best_min  = minimum(finite_vec)
+                end
             end
         end
-        ts_star_list[ti] = best_ts
-        r_list[ti] = denom == 0.0 ? 0.0 : (best_ts - tsL) / denom
+
+        ts_star_list[ti]   = best_ts
+        r_list[ti]         = denom == 0.0 ? 0.0 : (best_ts - tsL) / denom
+        best_obj_list[ti]  = best_obj
+        best_mean_list[ti] = best_mean
+        best_var_list[ti]  = best_var
+        best_sd_list[ti]   = best_sd
+        best_min_list[ti]  = best_min
     end
 
-    return ts_star_list, r_list
+    return ts_star_list, r_list, best_obj_list, best_mean_list, best_var_list, best_sd_list, best_min_list
 end
