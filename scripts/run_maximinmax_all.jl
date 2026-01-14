@@ -34,7 +34,7 @@ const UTILITIES = ["u1", "u2"]
 const TRUE_WEIGHT_TYPES = ["A", "B", "C", "D", "E"]
 
 const ACTIVE_METHOD_DIRS = [
-    "AMRD", "AMRwc", "AMRW", "AMRWW", "DMIN",
+    "AMRD", "AMRwc", "AMRW", "AMRWW", 
     "E-AMRD", "E-AMRW", "E-AMRWW",
     "E-MMRD", "E-MMRW", "E-MMRWW",
     "E-DMIN", "E-WMIN", "E-WWMIN", "EV",
@@ -42,7 +42,7 @@ const ACTIVE_METHOD_DIRS = [
     "G-MMRD", "G-MMRW", "G-MMRWW",
     "G-DMIN", "G-WMIN", "G-WWMIN", "GM",
     "MMRD",  "MMRwc", "MMRW", "MMRWW",
-    "DMIN", "WMIN", "WWMIN", "WMIN",
+    "DMIN", "WMIN", "WWMIN", 
     "eAMRd", "eAMRdc", "eAMRw", "eAMRwc",
     "eMMRd", "eMMRdc", "eMMRw", "eMMRwc",
     "gAMRd", "gAMRdc", "gAMRw", "gAMRwc",
@@ -424,7 +424,7 @@ function main()
     paths = Paths.project_paths()
     outdir = joinpath(paths.data, "metrics_julia")
     mkpath(outdir)
-    outpath = joinpath(outdir, "grid_summary_maximinmaximax_v3.csv")
+    outpath = joinpath(outdir, "grid_summary_maximinmaximax_v4.csv")
 
     open(outpath, "w") do io
         println(io, join([
