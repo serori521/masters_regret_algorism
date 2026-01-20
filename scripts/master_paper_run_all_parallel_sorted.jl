@@ -420,7 +420,7 @@ function summarize_one_regret(paths, utility::String, N::Int, tw::String, method
     )
 end
 
-function run_minimax_regret_grid_summaries_v3_sorted(; outname::String="grid_summary_minimax_regret_v3.csv")
+function run_minimax_regret_grid_summaries_sorted(; outname::String="grid_summary_minimax_regret_v3.csv")
     paths = Paths.project_paths()
     outdir = joinpath(paths.data, "metrics_julia")
     mkpath(outdir)
@@ -806,7 +806,7 @@ function summarize_one_scan(paths, rule::Symbol, utility::String, N::Int, tw::St
     )
 end
 
-function run_maximinmaximax_grid_summaries_v5_sorted(; outname::String="grid_summary_maximinmaximax_v5.csv")
+function run_maximinmaximax_grid_summaries_sorted(; outname::String="grid_summary_maximinmaximax_v5.csv")
     paths = Paths.project_paths()
     outdir = joinpath(paths.data, "metrics_julia")
     mkpath(outdir)
@@ -876,8 +876,8 @@ end
 function main()
     @info "master runner start" nthreads=nthreads() par_regret=PAR_LEVEL_REGRET par_scan=PAR_LEVEL_SCAN
 
-    p1 = run_minimax_regret_grid_summaries_v3_sorted()
-    p2 = run_maximinmaximax_grid_summaries_v5_sorted()
+    p1 = run_minimax_regret_grid_summaries_sorted()
+    p2 = run_maximinmaximax_grid_summaries_sorted()
 
     @info "master runner finished" regret=p1 maximinmaximax=p2
 end
