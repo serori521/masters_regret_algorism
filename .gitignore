@@ -24,3 +24,6 @@ docs/site/
 Manifest.toml
 
 .DS_Store
+tex_data/generated_tables_all
+tex_data/grid_summary_maximinmaximax_v5.csv
+tex_data/grid_summary_minimax_regret_v3.csv
