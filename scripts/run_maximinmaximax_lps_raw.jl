@@ -20,6 +20,7 @@ using .Paths
 using .LoadInstance
 using .SetRegretCore
 using Base.Threads
+using Base.Sort: MergeSort
 
 # -------------------------
 # Config (run_regret_lps_raw.jl に揃える)
@@ -102,7 +103,7 @@ function build_perm(U::Matrix{Float64}, rule::Symbol)
     perm = Vector{Vector{Int}}(undef, Alt)
     rev = (rule == :maximax)
     @inbounds for a in 1:Alt
-        perm[a] = sortperm(@view U[a, :]; rev=rev)
+        perm[a] = sortperm(@view U[a, :]; rev=rev, alg=MergeSort)
     end
     return perm
 end
@@ -199,7 +200,7 @@ function scan_timeline_maximinmaximax(U::Matrix{Float64}, wL::Vector{Float64}, w
     end
     fill!(z, 0.0)
     maximin_totalU!(totalU, z, star, U, yL, yR, perm)
-    rank = sortperm(totalU; rev=true)  # 1..Alt
+    rank = sortperm(totalU; rev=true, alg=MergeSort)    
     push!(ranks, copy(rank))
 
     t_snap = tU
@@ -343,9 +344,9 @@ function main(; force::Bool=false)
     paths = Paths.project_paths()
 
     tasks = [(N, tw, m) for N in NS for tw in TRUE_WEIGHT_TYPES for m in METHOD_DIRS]
-    rules = (:maximin, :maximax)
-
-    for rule in rules, utility in UTILITIES
+    # rules = (:maximin)#, :maximax
+    rule = :maximax
+    for  utility in UTILITIES
         @threads for idx in eachindex(tasks)
             (N, tw, m) = tasks[idx]
             st = run_one_file(paths, rule, utility, N, tw, m; force=force)
